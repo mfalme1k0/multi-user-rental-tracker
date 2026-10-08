@@ -1,22 +1,30 @@
 package com.rentaltracker.transport;
 
-import com.rentaltracker.domain.*;
+import com.rentaltracker.domain.Item;
+import com.rentaltracker.domain.ItemStatus;
+import com.rentaltracker.domain.Rental;
+import com.rentaltracker.domain.RentalStatus;
+import com.rentaltracker.domain.User;
+import com.rentaltracker.infrastructure.DatabaseManager;
+import com.rentaltracker.repository.sqlite.SQLiteItemRepository;
+import com.rentaltracker.repository.sqlite.SQLiteRentalRepository;
+import com.rentaltracker.repository.sqlite.SQLiteTransactor;
+import com.rentaltracker.repository.sqlite.SQLiteUserRepository;
 import com.rentaltracker.service.ItemService;
 import com.rentaltracker.service.RentalService;
-import com.rentaltracker.service.fake.FakeItemRepository;
-import com.rentaltracker.service.fake.FakeRentalRepository;
-import com.rentaltracker.service.fake.FakeTransactor;
-import com.rentaltracker.service.fake.FakeUserRepository;
-import org.junit.jupiter.api.Test;
-
 import com.rentaltracker.service.UserService;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDateTime;
 
@@ -25,838 +33,64 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TransportTest {
 
+    @TempDir
+    Path tempDir;
+
     private final PrintStream originalOut = System.out;
+
+    private SQLiteUserRepository users;
+    private SQLiteItemRepository items;
+    private SQLiteRentalRepository rentals;
+
+    private UserService userService;
+    private ItemService itemService;
+    private RentalService rentalService;
+
+    @BeforeEach
+    void beforeEach() {
+        DatabaseManager db = createDatabase();
+
+        users = new SQLiteUserRepository(db);
+        items = new SQLiteItemRepository(db);
+        rentals = new SQLiteRentalRepository(db);
+
+        SQLiteTransactor transactor = new SQLiteTransactor(db);
+
+        userService = new UserService(users);
+
+        itemService = new ItemService(
+                items,
+                rentals,
+                users,
+                transactor
+        );
+
+        rentalService = new RentalService(
+                items,
+                rentals,
+                userService,
+                transactor,
+                Clock.systemDefaultZone()
+        );
+    }
 
     @AfterEach
     void restoreSystemOutput() {
         System.setOut(originalOut);
     }
 
+    private DatabaseManager createDatabase() {
+        Path database = tempDir.resolve("rental-tracker.db");
+        DatabaseManager databaseManager = new DatabaseManager(database);
+        databaseManager.initialize();
+        return databaseManager;
+    }
+
     @Test
     void testFirstLaunchRegistersOwnerAndDisplaysWelcomeMessage() {
-        ByteArrayInputStream input = new ByteArrayInputStream("  JACKSON  \n".getBytes(StandardCharsets.UTF_8));
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        FakeUserRepository userRepository = new FakeUserRepository();
-        UserService userService = new UserService(userRepository);
-
-        Transport transport = new Transport(
-                userService,
-                null,
-                null
-        );
-
-        User owner = transport.firstLaunch();
-
-        assertEquals("jackson", owner.username());
-        assertEquals(
-                "jackson",
-                userRepository.findFirst().orElseThrow().username()
-        );
-        assertTrue(
-                output.toString(StandardCharsets.UTF_8)
-                        .contains("Welcome, jackson!")
-        );
-    }
-
-    @Test
-    void testStartingWithExistingOwnerWelcomesBackAndShowsMenu() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-
-        User existingOwner = userRepository.insert(User.newUser("jackson"));
-
-        UserService userService = new UserService(userRepository);
-
-        ByteArrayInputStream input = new ByteArrayInputStream(
-                        "5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                null,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Welcome back, jackson!"));
-        assertTrue(result.contains("=== Rental tracker ==="));
-        assertTrue(result.contains("Goodbye."));
-        assertEquals(1, userRepository.findFirst().orElseThrow().id());
-    }
-
-    @Test
-    void testInvalidMenuOptionDisplaysError() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-
-        userRepository.insert(User.newUser("jackson"));
-
-        UserService userService = new UserService(userRepository);
-
         ByteArrayInputStream input =
                 new ByteArrayInputStream(
-                        "99\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                null,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Invalid option."));
-        assertTrue(result.contains("Goodbye."));
-    }
-
-    @Test
-    void testListItemSuccessfully() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        ByteArrayInputStream input = new ByteArrayInputStream(
-                        "1\nLaptop\nGaming laptop\n500\n5\n"
-                                .getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        Item item = itemRepository.findById(1).orElseThrow();
-
-        assertEquals(owner.id(), item.ownerId());
-        assertEquals("Laptop", item.name());
-        assertEquals("Gaming laptop", item.description());
-        assertEquals(new BigDecimal("500"), item.costPerDay());
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("=== List an item ==="));
-        assertTrue(result.contains("Item listed successfully."));
-        assertTrue(result.contains("Goodbye."));
-    }
-
-    @Test
-    void testListItemWithInvalidCostDisplaysError() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "1\nLaptop\nGaming laptop\nnot-a-number\n5\n"
-                                .getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Invalid cost."));
-        assertTrue(result.contains("Goodbye."));
-        assertTrue(itemRepository.findById(1).isEmpty());
-    }
-
-    @Test
-    void testListItemWhenServiceRejectsCostDisplaysBusinessError() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "1\nLaptop\nGaming laptop\n0\n5\n"
-                                .getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Goodbye."));
-        assertTrue(itemRepository.findById(1).isEmpty());
-    }
-
-    @Test
-    void testViewInventoryWithNoItemsDisplaysEmptyMessage() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("=== My inventory ==="));
-        assertTrue(result.contains("No items found."));
-        assertTrue(result.contains("Goodbye."));
-
-        assertTrue(itemRepository.findByOwnerId(owner.id()).isEmpty());
-    }
-
-    @Test
-    void testViewInventoryDisplaysItems() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        Item item = itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("=== My inventory ==="));
-        assertTrue(result.contains("1) Laptop - available"));
-        assertTrue(result.contains("B) Back to menu"));
-        assertTrue(result.contains("Goodbye."));
-
-        assertEquals(item.id(), itemRepository.findById(item.id()).orElseThrow().id());
-    }
-
-    @Test
-    void testViewInventorySelectsItemAndDisplaysDetails() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        Item item = itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("=== Laptop ==="));
-        assertTrue(result.contains("description    Gaming laptop"));
-        assertTrue(result.contains("cost per day   500"));
-        assertTrue(result.contains("status         available"));
-        assertTrue(result.contains("owner          jackson"));
-        assertTrue(result.contains("Delist"));
-        assertTrue(result.contains("2) Back to list"));
-
-        assertEquals(
-                ItemStatus.AVAILABLE,
-                itemRepository.findById(item.id()).orElseThrow().status()
-        );
-    }
-
-    @Test
-    void testDelistAvailableItem() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        Item item = itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Item delisted."));
-        assertTrue(result.contains("status         unlisted"));
-        assertTrue(result.contains("Goodbye."));
-
-        assertEquals(
-                ItemStatus.UNLISTED,
-                itemRepository.findById(item.id()).orElseThrow().status()
-        );
-    }
-
-    @Test
-    void testRelistUnlistedItem() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        Item item = itemRepository.insert(
-                new Item(
-                        null,
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500"),
-                        ItemStatus.UNLISTED,
-                        null
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Item relisted."));
-        assertTrue(result.contains("status         available"));
-        assertTrue(result.contains("Goodbye."));
-
-        assertEquals(
-                ItemStatus.AVAILABLE,
-                itemRepository.findById(item.id()).orElseThrow().status()
-        );
-    }
-
-    @Test
-    void testRelistItemWithActiveRentalDisplaysBusinessError() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-
-        User owner = userRepository.insert(User.newUser("jackson"));
-        User renter = userRepository.insert(User.newUser("renter"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        Item item = itemRepository.insert(
-                new Item(
-                        null,
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500"),
-                        ItemStatus.UNLISTED,
-                        null
-                )
-        );
-
-        rentalRepository.insert(
-                new Rental(
-                        null,
-                        item.id(),
-                        renter.id(),
-                        LocalDateTime.now(),
-                        LocalDateTime.now().plusDays(3),
-                        null,
-                        RentalStatus.ACTIVE
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Cannot relist item"));
-        assertTrue(result.contains("Goodbye."));
-
-        assertEquals(
-                ItemStatus.UNLISTED,
-                itemRepository.findById(item.id()).orElseThrow().status()
-        );
-    }
-
-    @Test
-    void testViewInventoryWithNonNumericSelectionDisplaysError() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\nabc\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Invalid number."));
-        assertTrue(result.contains("Goodbye."));
-    }
-
-    @Test
-    void testViewInventoryWithOutOfRangeSelectionDisplaysError() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\n99\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Invalid option."));
-        assertTrue(result.contains("Goodbye."));
-    }
-
-    @Test
-    void testViewInventoryPagination() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        for (int i = 1; i <= 6; i++) {
-            itemRepository.insert(
-                    Item.newListing(
-                            owner.id(),
-                            "Item " + i,
-                            "Description " + i,
-                            new BigDecimal("100")
-                    )
-            );
-        }
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\nN\nP\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("1) Item 1 - available"));
-        assertTrue(result.contains("5) Item 5 - available"));
-        assertTrue(result.contains("1) Item 6 - available"));
-        assertTrue(result.contains("N) Next page"));
-        assertTrue(result.contains("P) Previous page"));
-        assertTrue(result.contains("Goodbye."));
-    }
-
-    @Test
-    void testRecordRentalWithNoAvailableItemsDisplaysMessage() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "3\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                null
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("No available items."));
-        assertTrue(result.contains("Goodbye."));
-    }
-
-    @Test
-    void testRecordRentalSuccessfully() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-
-        User owner = userRepository.insert(User.newUser("jackson"));
-        User renter = userRepository.insert(User.newUser("alex"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        RentalService rentalService = new RentalService(
-                itemRepository,
-                rentalRepository,
-                userService,
-                transactor,
-                Clock.systemDefaultZone()
-        );
-
-        Item item = itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "3\n1\nalex\n3\n5\n".getBytes(StandardCharsets.UTF_8)
+                        "  JACKSON  \n5\n".getBytes(StandardCharsets.UTF_8)
                 );
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -872,7 +106,534 @@ class TransportTest {
 
         transport.start();
 
-        Rental rental = rentalRepository.findById(1).orElseThrow();
+        User owner = users.findFirst().orElseThrow();
+
+        assertEquals("jackson", owner.username());
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("Welcome, jackson!"));
+        assertTrue(result.contains("=== Rental tracker ==="));
+        assertTrue(result.contains("Goodbye."));
+    }
+
+    @Test
+    void testStartingWithExistingOwnerWelcomesBackAndShowsMenu() {
+        User existingOwner = users.insert(User.newUser("jackson"));
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("Welcome back, jackson!"));
+        assertTrue(result.contains("=== Rental tracker ==="));
+        assertTrue(result.contains("Goodbye."));
+        assertEquals(
+                existingOwner.id(),
+                users.findFirst().orElseThrow().id()
+        );
+    }
+
+    @Test
+    void testInvalidMenuOptionDisplaysError() {
+        users.insert(User.newUser("jackson"));
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "99\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("Invalid option."));
+        assertTrue(result.contains("Goodbye."));
+    }
+
+    @Test
+    void testListItemSuccessfully() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "1\nLaptop\nGaming laptop\n500\n5\n"
+                                .getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        Item item = items.findByOwnerId(owner.id())
+                .stream()
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(owner.id(), item.ownerId());
+        assertEquals("Laptop", item.name());
+        assertEquals("Gaming laptop", item.description());
+        assertEquals(new BigDecimal("500"), item.costPerDay());
+        assertEquals(ItemStatus.AVAILABLE, item.status());
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("=== List an item ==="));
+        assertTrue(result.contains("Item listed successfully."));
+        assertTrue(result.contains("Goodbye."));
+    }
+
+    @Test
+    void testListItemWithInvalidCostDisplaysError() {
+        users.insert(User.newUser("jackson"));
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "1\nLaptop\nGaming laptop\nnot-a-number\n5\n"
+                                .getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("Invalid cost."));
+        assertTrue(result.contains("Goodbye."));
+        assertTrue(items.findByOwnerId(1).isEmpty());
+    }
+
+    @Test
+    void testListItemWhenServiceRejectsCostDisplaysBusinessError() {
+        users.insert(User.newUser("jackson"));
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "1\nLaptop\nGaming laptop\n0\n5\n"
+                                .getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("Goodbye."));
+        assertTrue(items.findByOwnerId(1).isEmpty());
+    }
+
+    @Test
+    void testViewInventoryWithNoItemsDisplaysEmptyMessage() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "2\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("=== My inventory ==="));
+        assertTrue(result.contains("No items found."));
+        assertTrue(result.contains("Goodbye."));
+        assertTrue(items.findByOwnerId(owner.id()).isEmpty());
+    }
+
+    @Test
+    void testViewInventoryDisplaysItems() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
+        );
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("=== My inventory ==="));
+        assertTrue(result.contains("1) Laptop - available"));
+        assertTrue(result.contains("B) Back to menu"));
+        assertTrue(result.contains("Goodbye."));
+        assertEquals(item.id(), items.getById(item.id()).id());
+    }
+
+    @Test
+    void testViewInventorySelectsItemAndDisplaysDetails() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
+        );
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream("2\n1\n99\nb\nB\n5\n".getBytes(StandardCharsets.UTF_8));
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("=== Laptop ==="));
+        assertTrue(result.contains("description    Gaming laptop"));
+        assertTrue(result.contains("cost per day   500"));
+        assertTrue(result.contains("status         available"));
+        assertTrue(result.contains("owner          jackson"));
+        assertTrue(result.contains("Delist"));
+        assertTrue(result.contains("2) Back to list"));
+        assertTrue(result.contains("Invalid option."));
+
+        assertEquals(
+                ItemStatus.AVAILABLE,
+                items.getById(item.id()).status()
+        );
+    }
+
+
+    @Test
+    void testDelistAvailableItem() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
+        );
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("Item delisted."));
+        assertTrue(result.contains("status         unlisted"));
+        assertTrue(result.contains("Goodbye."));
+
+        assertEquals(
+                ItemStatus.UNLISTED,
+                items.getById(item.id()).status()
+        );
+    }
+
+    @Test
+    void testRelistUnlistedItem() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
+        );
+
+        itemService.delist(item.id());
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("Item relisted."));
+        assertTrue(result.contains("status         available"));
+        assertTrue(result.contains("Goodbye."));
+
+        assertEquals(
+                ItemStatus.AVAILABLE,
+                items.getById(item.id()).status()
+        );
+    }
+
+    @Test
+    void testRelistItemWithActiveRentalDisplaysBusinessError() {
+        User owner = users.insert(User.newUser("jackson"));
+        User renter = users.insert(User.newUser("renter"));
+
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
+        );
+
+        itemService.delist(item.id());
+
+        rentals.insert(
+                Rental.newActive(
+                        item.id(),
+                        renter.id(),
+                        LocalDateTime.now(),
+                        LocalDateTime.now().plusDays(3)
+                )
+        );
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("Cannot relist item"));
+        assertTrue(result.contains("Goodbye."));
+
+        assertEquals(
+                ItemStatus.UNLISTED,
+                items.getById(item.id()).status()
+        );
+    }
+
+    @Test
+    void testViewInventoryPaginationAndInvalidSelections() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        for (int i = 1; i <= 6; i++) {
+            itemService.listItem(
+                    owner.id(),
+                    "Item " + i,
+                    "Description " + i,
+                    new BigDecimal("100")
+            );
+        }
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "2\nN\nN\nP\nP\nabc\n0\n99\nB\n5\n"
+                                .getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("1) Item 1 - available"));
+        assertTrue(result.contains("5) Item 5 - available"));
+        assertTrue(result.contains("1) Item 6 - available"));
+        assertTrue(result.contains("N) Next page"));
+        assertTrue(result.contains("P) Previous page"));
+        assertTrue(result.contains("Invalid number."));
+        assertTrue(result.contains("Invalid option."));
+        assertTrue(result.contains("Goodbye."));
+    }
+
+    @Test
+    void testRecordRentalWithNoAvailableItemsDisplaysMessage() {
+        users.insert(User.newUser("jackson"));
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "3\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("No available items."));
+        assertTrue(result.contains("Goodbye."));
+    }
+
+    @Test
+    void testRecordRentalSuccessfully() {
+        User owner = users.insert(User.newUser("jackson"));
+        User renter = users.insert(User.newUser("alex"));
+
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
+        );
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "3\n1\nalex\n3\n5\n"
+                                .getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        Rental rental = rentals.findByItemId(item.id())
+                .stream()
+                .findFirst()
+                .orElseThrow();
 
         assertEquals(item.id(), rental.itemId());
         assertEquals(renter.id(), rental.renterId());
@@ -880,50 +641,25 @@ class TransportTest {
 
         assertEquals(
                 ItemStatus.RENTED,
-                itemRepository.findById(item.id()).orElseThrow().status()
+                items.getById(item.id()).status()
         );
 
         String result = output.toString(StandardCharsets.UTF_8);
 
         assertTrue(result.contains("Rental recorded successfully."));
-        assertTrue(result.contains("Rental ID: 1"));
+        assertTrue(result.contains("Rental ID: " + rental.id()));
         assertTrue(result.contains("Goodbye."));
     }
 
     @Test
     void testRecordRentalWithInvalidDurationDisplaysError() {
-        FakeUserRepository userRepository = new FakeUserRepository();
+        User owner = users.insert(User.newUser("jackson"));
 
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        RentalService rentalService = new RentalService(
-                itemRepository,
-                rentalRepository,
-                userService,
-                transactor,
-                Clock.systemDefaultZone()
-        );
-
-        Item item = itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
         );
 
         ByteArrayInputStream input =
@@ -950,48 +686,23 @@ class TransportTest {
         assertTrue(result.contains("Invalid duration."));
         assertTrue(result.contains("Goodbye."));
 
-        assertTrue(rentalRepository.findById(1).isEmpty());
+        assertTrue(rentals.findByItemId(item.id()).isEmpty());
 
         assertEquals(
                 ItemStatus.AVAILABLE,
-                itemRepository.findById(item.id()).orElseThrow().status()
+                items.getById(item.id()).status()
         );
     }
 
     @Test
     void testRecordRentalWhenServiceRejectsRentalDisplaysBusinessError() {
-        FakeUserRepository userRepository = new FakeUserRepository();
+        User owner = users.insert(User.newUser("jackson"));
 
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        RentalService rentalService = new RentalService(
-                itemRepository,
-                rentalRepository,
-                userService,
-                transactor,
-                Clock.systemDefaultZone()
-        );
-
-        Item item = itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
         );
 
         ByteArrayInputStream input =
@@ -1020,67 +731,39 @@ class TransportTest {
         ));
         assertTrue(result.contains("Goodbye."));
 
-        assertTrue(rentalRepository.findById(1).isEmpty());
+        assertTrue(rentals.findByItemId(item.id()).isEmpty());
 
         assertEquals(
                 ItemStatus.AVAILABLE,
-                itemRepository.findById(item.id()).orElseThrow().status()
+                items.getById(item.id()).status()
         );
     }
 
     @Test
     void testConfirmReturnSuccessfully() {
-        FakeUserRepository userRepository = new FakeUserRepository();
+        User owner = users.insert(User.newUser("jackson"));
+        User renter = users.insert(User.newUser("alex"));
 
-        User owner = userRepository.insert(User.newUser("jackson"));
-        User renter = userRepository.insert(User.newUser("alex"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
         );
 
-        RentalService rentalService = new RentalService(
-                itemRepository,
-                rentalRepository,
-                userService,
-                transactor,
-                Clock.systemDefaultZone()
-        );
+        items.updateStatus(item.id(), ItemStatus.RENTED);
 
-        Item item = itemRepository.insert(
-                Item.newListing(
-                        owner.id(),
-                        "Laptop",
-                        "Gaming laptop",
-                        new BigDecimal("500")
-                )
-        );
-
-        itemRepository.updateStatus(item.id(), ItemStatus.RENTED);
-
-        Rental rental = rentalRepository.insert(
+        Rental rental = rentals.insert(
                 Rental.newActive(
                         item.id(),
                         renter.id(),
-                        java.time.LocalDateTime.now(),
-                        java.time.LocalDateTime.now().plusDays(3)
+                        LocalDateTime.now(),
+                        LocalDateTime.now().plusDays(3)
                 )
         );
 
         ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "4\n1\n1\n5\n"
-                                .getBytes(StandardCharsets.UTF_8)
-                );
+                new ByteArrayInputStream("4\n1\n99\nb\n1\n1\n5\n".getBytes(StandardCharsets.UTF_8));
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
@@ -1095,49 +778,29 @@ class TransportTest {
 
         transport.start();
 
-        Rental savedRental = rentalRepository.findById(rental.id()).orElseThrow();
+        Rental savedRental = rentals.findById(rental.id()).orElseThrow();
 
-        assertEquals(RentalStatus.CLOSED, savedRental.status());
+        assertEquals(
+                RentalStatus.CLOSED,
+                savedRental.status()
+        );
+
         assertEquals(
                 ItemStatus.AVAILABLE,
-                itemRepository.findById(item.id()).orElseThrow().status()
+                items.getById(item.id()).status()
         );
 
         String result = output.toString(StandardCharsets.UTF_8);
 
-        System.out.println(result);
-
         assertTrue(result.contains("=== Confirm a return ==="));
-        assertTrue(result.contains("item-" + item.id() + " - renter-" + renter.id()));
+        assertTrue(result.contains("Laptop - alex"));
+        assertTrue(result.contains("Invalid option."));
         assertTrue(result.contains("Return confirmed successfully."));
     }
 
     @Test
     void testConfirmReturnWithNoActiveRentalsDisplaysMessage() {
-        FakeUserRepository userRepository = new FakeUserRepository();
-
-        User owner = userRepository.insert(User.newUser("jackson"));
-
-        FakeItemRepository itemRepository = new FakeItemRepository();
-        FakeRentalRepository rentalRepository = new FakeRentalRepository();
-        FakeTransactor transactor = new FakeTransactor();
-
-        UserService userService = new UserService(userRepository);
-
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor
-        );
-
-        RentalService rentalService = new RentalService(
-                itemRepository,
-                rentalRepository,
-                userService,
-                transactor,
-                Clock.systemDefaultZone()
-        );
+        users.insert(User.newUser("jackson"));
 
         ByteArrayInputStream input =
                 new ByteArrayInputStream(
@@ -1162,7 +825,200 @@ class TransportTest {
 
         assertTrue(result.contains("No active rentals."));
         assertTrue(result.contains("Goodbye."));
-
-        assertTrue(rentalRepository.findById(1).isEmpty());
+        assertTrue(rentals.findById(1).isEmpty());
     }
+
+    @Test
+    void testConfirmReturnPaginationAndInvalidSelections() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        for (int i = 1; i <= 6; i++) {
+            User renter = users.insert(
+                    User.newUser("renter" + i)
+            );
+
+            Item item = itemService.listItem(
+                    owner.id(),
+                    "Item " + i,
+                    "Description " + i,
+                    new BigDecimal("100")
+            );
+
+            items.updateStatus(item.id(), ItemStatus.RENTED);
+
+            rentals.insert(
+                    Rental.newActive(
+                            item.id(),
+                            renter.id(),
+                            LocalDateTime.now(),
+                            LocalDateTime.now().plusDays(3)
+                    )
+            );
+        }
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "4\nN\nN\nP\nP\nabc\n0\n99\nB\n5\n"
+                                .getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("1) Item 1 - renter1"));
+        assertTrue(result.contains("1) Item 6 - renter6"));
+        assertTrue(result.contains("N) Next page"));
+        assertTrue(result.contains("P) Previous page"));
+        assertTrue(result.contains("Invalid number."));
+        assertTrue(result.contains("Invalid option."));
+        assertTrue(result.contains("Goodbye."));
+    }
+
+    @Test
+    void testRecordRentalPaginationAndInvalidSelections() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        for (int i = 1; i <= 6; i++) {
+            itemService.listItem(
+                    owner.id(),
+                    "Item " + i,
+                    "Description " + i,
+                    new BigDecimal("100")
+            );
+        }
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "3\nN\nN\nP\nP\nabc\n0\n99\nB\n5\n"
+                                .getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("1) Item 1 - 100.00/day"));
+        assertTrue(result.contains("5) Item 5 - 100.00/day"));
+        assertTrue(result.contains("1) Item 6 - 100.00/day"));
+        assertTrue(result.contains("N) Next page"));
+        assertTrue(result.contains("P) Previous page"));
+        assertTrue(result.contains("Invalid number."));
+        assertTrue(result.contains("Invalid option."));
+        assertTrue(result.contains("Goodbye."));
+    }
+
+    @Test
+    void testConfirmReturnWhenRentalIsNoLongerActiveDisplaysBusinessError() {
+        User owner = users.insert(User.newUser("jackson"));
+        User renter = users.insert(User.newUser("alex"));
+
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
+        );
+
+        Rental rental = rentalService.recordRental(
+                item.id(),
+                renter.username(),
+                3
+        );
+
+        InputStream input = new InputStream() {
+            private final ByteArrayInputStream source =
+                    new ByteArrayInputStream(
+                            "4\n1\n1\n2\n5\n"
+                                    .getBytes(StandardCharsets.UTF_8)
+                    );
+
+            private int oneCount = 0;
+
+            @Override
+            public int read() {
+                int value = source.read();
+
+                if (value == '1') {
+                    oneCount++;
+
+                    if (oneCount == 2) {
+                        rentals.updateStatus(
+                                rental.id(),
+                                RentalStatus.CLOSED,
+                                LocalDateTime.now()
+                        );
+                    }
+                }
+
+                return value;
+            }
+
+            @Override
+            public int read(byte[] buffer, int offset, int length) {
+                if (length == 0) {
+                    return 0;
+                }
+
+                int value = read();
+
+                if (value == -1) {
+                    return -1;
+                }
+
+                buffer[offset] = (byte) value;
+                return 1;
+            }
+        };
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(
+                result.contains(
+                        "Rental " + rental.id()
+                                + " is not active, it cannot be returned"
+                )
+        );
+
+        assertEquals(
+                RentalStatus.CLOSED,
+                rentals.findById(rental.id()).orElseThrow().status()
+        );
+    }
+
 }
