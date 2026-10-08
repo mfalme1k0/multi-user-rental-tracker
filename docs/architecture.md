@@ -92,17 +92,17 @@ make it impossible to return.
 
 ## 5. Decisions and their reasons
 
-| # | Decision | Why |
-|---|---|---|
-| D1 | **Unchecked exceptions.** `DatabaseException extends RuntimeException`; `BusinessRuleException` is a separate unchecked tree. | Repositories catch checked `SQLException` once and rethrow typed exceptions, so no layer above declares `throws`. One catch in the menu loop can show the message and return to the menu. Business failures are not database failures, so they are not subclasses of each other. |
-| D2 | **Four constraint subtypes** under abstract `ConstraintViolationException` (`Unique`, `ForeignKey`, `NotNull`, `Check`). | The spec requires each broken rule to throw its own exception and tests to assert that exact type. |
-| D3 | **`findX` returns `Optional`; `getX` throws `NotFoundException`; an update touching 0 rows throws `NotFoundException`.** | "Absent" is normal for lookups such as first launch, but an error when the caller expected the row. Two names make the intent visible at the call site. |
-| D4 | **`Transactor` interface in `repository`, implemented in `repository.sqlite`.** Services own transaction boundaries. | Recording a rental = insert rental + flip item status; both or neither. That is a business rule, so the service decides. The diagram keeps Service -> Repository only, so the service depends on an abstraction, not on `java.sql`. Nested calls join the outer transaction; a RuntimeException rolls back. |
-| D5 | **Records with no validation** in domain constructors. | Tests must build an invalid `Item` (null name) to prove the *database* rejects it. Validation belongs to the service (`ValidationException`). |
-| D6 | **`ItemStatus.fromDbValue` throws `IllegalArgumentException`**; the repository mapper wraps it in `MappingException`. | Keeps the domain free of persistence exceptions while still meeting "row won't map -> MappingException". |
-| D7 | **Read models** `RentalDetails`, `ItemDetails`. | The return list needs item name + renter username per row: one joined query, not one query per row. |
-| D8 | **`Clock` injected into `RentalService`**; `Main` passes `Clock.systemUTC()`. | "End time = start + days" must be testable with a fixed instant. |
-| D9 | **Timestamps stored as UTC text `yyyy-MM-dd HH:mm:ss`**, `LocalDateTime` in the domain, formatted for display only in transport. | SQLite `CURRENT_TIMESTAMP` is UTC and text. Mixing local and UTC between `created_at` (database) and `start_time` (app) would silently corrupt comparisons and ordering. |
+| #   | Decision | Why |
+|-----|---|---|
+| D1  | **Unchecked exceptions.** `DatabaseException extends RuntimeException`; `BusinessRuleException` is a separate unchecked tree. | Repositories catch checked `SQLException` once and rethrow typed exceptions, so no layer above declares `throws`. One catch in the menu loop can show the message and return to the menu. Business failures are not database failures, so they are not subclasses of each other. |
+| D2  | **Four constraint subtypes** under abstract `ConstraintViolationException` (`Unique`, `ForeignKey`, `NotNull`, `Check`). | The spec requires each broken rule to throw its own exception and tests to assert that exact type. |
+| D3  | **`findX` returns `Optional`; `getX` throws `NotFoundException`; an update touching 0 rows throws `NotFoundException`.** | "Absent" is normal for lookups such as first launch, but an error when the caller expected the row. Two names make the intent visible at the call site. |
+| D4  | **`Transactor` interface in `repository`, implemented in `repository.sqlite`.** Services own transaction boundaries. | Recording a rental = insert rental + flip item status; both or neither. That is a business rule, so the service decides. The diagram keeps Service -> Repository only, so the service depends on an abstraction, not on `java.sql`. Nested calls join the outer transaction; a RuntimeException rolls back. |
+| D5  | **Records with no validation** in domain constructors. | Tests must build an invalid `Item` (null name) to prove the *database* rejects it. Validation belongs to the service (`ValidationException`). |
+| D6  | **`ItemStatus.fromDbValue` throws `IllegalArgumentException`**; the repository mapper wraps it in `MappingException`. | Keeps the domain free of persistence exceptions while still meeting "row won't map -> MappingException". |
+| D7  | **Read models** `RentalDetails`, `ItemDetails`. | The return list needs item name + renter username per row: one joined query, not one query per row. |
+| D8  | **`Clock` injected into `RentalService`**; `Main` passes `Clock.systemUTC()`. | "End time = start + days" must be testable with a fixed instant. |
+| D9  | Timestamps stored as UTC ISO-8601 text `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`, `LocalDateTime` in the domain, formatted for display only in transport. | SQLite stores timestamps as UTC text. Using one UTC representation keeps database-generated and application-generated timestamps consistent and makes comparisons and ordering predictable.
 | D10 | **No static singletons; constructor injection wired only in `Main`.** `DatabaseManager` takes a `Path` and owns connection creation/configuration rather than a persistent application-wide connection. | Tests build the whole app on a temp file. Also makes the dependency direction visible in code. Normal repository operations use a connection for the duration of the operation; an active transaction owns one connection shared by participating repositories and closes it when the transaction commits or rolls back. |
 
 | D11 | **Console I/O is injected** (`ConsoleInput` reads an `InputStream`, menus write to a `PrintStream`). | The spec demands 100% coverage; untestable `System.in/out` in the menus would make that impossible. ArchUnit forbids `System.in/out/err` outside `transport` (and `Main`). |
@@ -116,17 +116,16 @@ make it impossible to return.
   foreign-key test passes for the wrong reason (or the constraint is never enforced).
 - CHECK on `listed_items.status` (`available`,`rented`,`unlisted`) and `rentals.status` (`active`,`closed`); values
   must equal `ItemStatus.dbValue()` / `RentalStatus.dbValue()`.
-- Recommended safety nets: partial unique index `ON rentals(item_id) WHERE status = 'active'` (a double rental is
-  impossible even if a service bug slips through); `CHECK (end_time > start_time)`; non-blank `item_name`;
-  `cost_per_day` > 0.
-- Translate `SQLiteException` by result code into the four constraint subtypes. Verify early (spike) that the driver
-  reports the *extended* result codes; if not, fall back to matching the message text.
-- Row mapping wraps `IllegalArgumentException` / `SQLException` from bad data in `MappingException`.
--`DatabaseManager` creates the parent directory and throws `DatabaseConnectionException` when the database cannot be opened. It does **not** hold a persistent application-wide connection and therefore does not implement `AutoCloseable`. Normal repository operations obtain and release their own connection. During a transaction, the transaction-owned connection is reused by participating repositories and is closed by the transaction boundary after commit or rollback.
 
-- Testing the CHECK rule: `ItemStatus` is an enum, so the repository cannot be handed an out-of-range status. Test it
-  by executing raw SQL through the same exception translator and asserting `CheckConstraintException`.
 
+  Database-enforced invariants:
+- `PRAGMA foreign_keys = ON` on every connection.
+- CHECK on `listed_items.status`.
+- CHECK on `rentals.status`.
+- CHECK on `rentals.end_time > rentals.start_time`.
+- CHECK on `listed_items.cost_per_day`.
+- Partial unique index on `rentals(item_id)` where `status = 'active'`.
+- Foreign keys use `ON DELETE RESTRICT`.
 ## 7. Testing conventions
 
 - Real SQLite, temp file per test (JUnit `@TempDir`), never a mock.
@@ -138,6 +137,6 @@ make it impossible to return.
 
 | # | Decision | Why | Enforced by |
 |---|---|---|---|
-| D15 | **No self-rental.** The renter must be a different account than the item's owner. | Otherwise an owner could "rent" their own item to inflate history or bypass the point of tracking who has what. | `RentalService.recordRental` compares `renter.id()` to `item.ownerId()` by identity (not by username text) and throws `BusinessRuleException`. A CHECK constraint (`renter_id != owner_id` via a join, or enforced at write time) should also guard this in `schema.sql` as a second line of defense — see Fidel's section below. |
-| D16 | **`cost_per_day` is a decimal, not a whole number.** | The spec's sample data happens to use whole numbers, but real pricing needs cents (e.g. 2.50/day). | Domain: `Item.costPerDay` is `java.math.BigDecimal` (never `double` — binary floats cannot represent decimal fractions exactly, and repeated arithmetic would drift). Service: `Validation.requirePositive` rejects zero/negative. Database: SQLite has no decimal type, so Fidel stores it as TEXT and parses it back in the repository (see docs/database-design.md, to be filled in) — never as SQLite's REAL/float type, for the same reason. |
-| D17 | **Minimum rental duration is 1 day.** No same-day/zero-day rentals. | Keeps the "end = start + days" model simple and matches how the item is billed (per day). | `Validation.requireAtLeastMinimumDays` in the service layer; also enforceable in `schema.sql` as `CHECK (end_time > start_time)` (already listed in section 6) as a second line of defense. |
+| D15 | No self-rental. The renter must be different from the item's owner. | An owner should not be able to rent their own item. The service compares stable user IDs rather than usernames. | `RentalService.recordRental`
+| D16 | `cost_per_day` is a decimal represented by `BigDecimal` in Java and stored as `TEXT` in SQLite. | SQLite has no dedicated decimal type and REAL uses floating-point representation. TEXT preserves the exact decimal representation. | Domain `BigDecimal`, repository conversion, database CHECK constraint
+| D17 | Minimum rental duration is 1 day. | The rental model calculates the end time as the start time plus the requested number of days and does not allow zero-day rentals. | Service validation and `CHECK (end_time > start_time)`

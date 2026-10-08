@@ -2,7 +2,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS users (
                        id INTEGER PRIMARY KEY,
-                       username TEXT NOT NULL UNIQUE,
+                       username TEXT NOT NULL UNIQUE COLLATE NOCASE,
                        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
@@ -52,3 +52,8 @@ CREATE TABLE IF NOT EXISTS rentals (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rentals_one_active_per_item
     ON rentals(item_id)
     WHERE status = 'active';
+
+CREATE TRIGGER IF NOT EXISTS trg_rentals_no_self_rental
+BEFORE INSERT ON rentals
+WHEN NEW.renter_id = (SELECT owner_id FROM listed_items WHERE id = NEW.item_id)
+BEGIN SELECT RAISE(ABORT, 'owner cannot rent own item'); END;

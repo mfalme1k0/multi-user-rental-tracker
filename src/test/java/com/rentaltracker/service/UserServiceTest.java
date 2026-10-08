@@ -2,10 +2,13 @@ package com.rentaltracker.service;
 
 import com.rentaltracker.domain.User;
 import com.rentaltracker.exception.ValidationException;
-import com.rentaltracker.service.fake.FakeUserRepository;
+import com.rentaltracker.infrastructure.DatabaseManager;
+import com.rentaltracker.repository.sqlite.SQLiteUserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -14,11 +17,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UserServiceTest {
 
+    @TempDir
+    Path tempDir;
+
     private UserService service;
 
     @BeforeEach
     void setUp() {
-        service = new UserService(new FakeUserRepository());
+        DatabaseManager db = createDatabase();
+        service = new UserService(new SQLiteUserRepository(db));
     }
 
     @Test
@@ -54,5 +61,12 @@ class UserServiceTest {
     @Test
     void findOrCreateRenterRejectsBlankName() {
         assertThrows(ValidationException.class, () -> service.findOrCreateRenter(" "));
+    }
+
+    private DatabaseManager createDatabase() {
+        Path database = tempDir.resolve("rental-tracker.db");
+        DatabaseManager databaseManager = new DatabaseManager(database);
+        databaseManager.initialize();
+        return databaseManager;
     }
 }

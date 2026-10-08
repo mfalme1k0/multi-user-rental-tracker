@@ -156,4 +156,28 @@ class SQLiteUserRepositoryTest {
                 () -> repository.getById(999L)
         );
     }
+
+    @Test
+    void insertRejectsUsernameDifferingOnlyByCase() {
+        SQLiteUserRepository repository = createRepository();
+
+        repository.insert(User.newUser("bob"));
+
+        assertThrows(UniqueConstraintException.class,
+                () -> repository.insert(User.newUser("Bob")));
+        assertThrows(UniqueConstraintException.class,
+                () -> repository.insert(User.newUser("BOB")));
+    }
+
+    @Test
+    void findByUsernameIgnoresCase() {
+        SQLiteUserRepository repository = createRepository();
+
+        User saved = repository.insert(User.newUser("mfalme"));
+
+        var result = repository.findByUsername("Mfalme");
+
+        assertTrue(result.isPresent());
+        assertEquals(saved.id(), result.get().id());
+    }
 }

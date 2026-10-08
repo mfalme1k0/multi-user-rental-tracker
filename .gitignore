@@ -27,4 +27,4 @@ Thumbs.db
 *.db-shm
 
 # Never commit throw-away databases created by tests or experiments
-*.tmp.db
+*.tmp.db*.db.bak

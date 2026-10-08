@@ -8,14 +8,17 @@ import com.rentaltracker.domain.User;
 import com.rentaltracker.exception.BusinessRuleException;
 import com.rentaltracker.exception.InvalidStateTransitionException;
 import com.rentaltracker.exception.ValidationException;
-import com.rentaltracker.service.fake.FakeItemRepository;
-import com.rentaltracker.service.fake.FakeRentalRepository;
-import com.rentaltracker.service.fake.FakeTransactor;
-import com.rentaltracker.service.fake.FakeUserRepository;
+import com.rentaltracker.infrastructure.DatabaseManager;
+import com.rentaltracker.repository.sqlite.SQLiteItemRepository;
+import com.rentaltracker.repository.sqlite.SQLiteRentalRepository;
+import com.rentaltracker.repository.sqlite.SQLiteTransactor;
+import com.rentaltracker.repository.sqlite.SQLiteUserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -32,20 +35,22 @@ class RentalServiceTest {
             Clock.fixed(Instant.parse("2026-06-16T14:30:00Z"), ZoneOffset.UTC);
     private static final LocalDateTime EXPECTED_START = LocalDateTime.of(2026, 6, 16, 14, 30);
 
-    private FakeItemRepository items;
-    private FakeRentalRepository rentals;
-    private FakeUserRepository users;
+    @TempDir
+    Path tempDir;
+
+    private SQLiteItemRepository items;
     private RentalService service;
     private ItemService itemService;
     private long ownerId;
 
     @BeforeEach
     void setUp() {
-        items = new FakeItemRepository();
-        rentals = new FakeRentalRepository();
-        users = new FakeUserRepository();
+        DatabaseManager db = createDatabase();
+        items = new SQLiteItemRepository(db);
+        SQLiteRentalRepository rentals = new SQLiteRentalRepository(db);
+        SQLiteUserRepository users = new SQLiteUserRepository(db);
+        SQLiteTransactor transactor = new SQLiteTransactor(db);
         UserService userService = new UserService(users);
-        FakeTransactor transactor = new FakeTransactor();
         itemService = new ItemService(items, rentals, users, transactor);
         service = new RentalService(items, rentals, userService, transactor, FIXED_CLOCK);
         ownerId = users.insert(User.newUser("owner")).id();
@@ -124,5 +129,12 @@ class RentalServiceTest {
         service.confirmReturn(rental.id());
 
         assertThrows(BusinessRuleException.class, () -> service.confirmReturn(rental.id()));
+    }
+
+    private DatabaseManager createDatabase() {
+        Path database = tempDir.resolve("rental-tracker.db");
+        DatabaseManager databaseManager = new DatabaseManager(database);
+        databaseManager.initialize();
+        return databaseManager;
     }
 }

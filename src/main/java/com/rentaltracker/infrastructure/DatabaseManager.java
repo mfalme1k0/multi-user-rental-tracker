@@ -7,10 +7,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 
 public final class DatabaseManager {
 
@@ -145,6 +142,7 @@ public final class DatabaseManager {
 
             try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate(schema);
+                migrate(connection);
             }
 
         } catch (IOException | SQLException e) {
@@ -205,6 +203,71 @@ public final class DatabaseManager {
                     "Could not close transaction connection",
                     e
             );
+        }
+    }
+
+    private static final int SCHEMA_VERSION = 1;
+
+
+    private void migrate(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            int version;
+            try (ResultSet rs = statement.executeQuery("PRAGMA user_version")) {
+                version = rs.getInt(1);
+            }
+            if (version >= SCHEMA_VERSION) {
+                return;
+            }
+            if (usersTableIsCaseSensitive(statement)) {
+                rebuildUsersTable(connection, statement);
+            } else {
+                statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+            }
+        }
+    }
+
+    private boolean usersTableIsCaseSensitive(Statement statement) throws SQLException {
+        try (ResultSet rs = statement.executeQuery(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'")) {
+            return !rs.getString(1).toUpperCase().contains("COLLATE NOCASE");
+        }
+    }
+
+    private void rebuildUsersTable(Connection connection, Statement statement) throws SQLException {
+        try (ResultSet rs = statement.executeQuery(
+                "SELECT lower(username), group_concat(id) FROM users "
+                        + "GROUP BY lower(username) HAVING count(*) > 1")) {
+            if (rs.next()) {
+                throw new SQLException("Cannot migrate: usernames differing only by case: "
+                        + rs.getString(1) + " (ids " + rs.getString(2) + "). Merge them first.");
+            }
+        }
+
+        statement.execute("PRAGMA foreign_keys = OFF");   // must be outside a transaction
+        connection.setAutoCommit(false);
+        try {
+            statement.execute("""
+                CREATE TABLE users_new (
+                  id INTEGER PRIMARY KEY,
+                  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))""");
+            statement.execute("INSERT INTO users_new (id, username, created_at) "
+                    + "SELECT id, username, created_at FROM users");
+            statement.execute("DROP TABLE users");
+            statement.execute("ALTER TABLE users_new RENAME TO users");
+            try (ResultSet rs = statement.executeQuery("PRAGMA foreign_key_check")) {
+                if (rs.next()) {
+                    throw new SQLException("Migration left dangling foreign keys");
+                }
+            }
+            statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+            connection.commit();
+        } catch (SQLException | RuntimeException e) {
+            connection.rollback();
+            throw e;
+        } finally {
+            connection.setAutoCommit(true);
+            statement.execute("PRAGMA foreign_keys = ON");
         }
     }
 }

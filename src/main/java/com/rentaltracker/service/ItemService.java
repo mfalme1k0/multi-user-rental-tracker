@@ -30,15 +30,8 @@ public class ItemService {
         this.transactor = Objects.requireNonNull(transactor);
     }
 
-    /**
-     * Creates a listing with status AVAILABLE.
-     *
-     * <p>No transaction needed: this is a single insert. {@link Transactor} is only used where more than one
-     * write must succeed or fail together (see {@link #relist} and {@code RentalService}).
-     *
-     * @throws com.rentaltracker.exception.ValidationException blank name, or cost per day not a positive amount
-     * @throws com.rentaltracker.exception.ForeignKeyConstraintException ownerId does not exist
-     */
+    // Creates a listing with status AVAILABLE.
+
     public Item listItem(long ownerId, String name, String description, BigDecimal costPerDay) {
         String cleanName = Validation.requireNonBlank(name, "name");
         BigDecimal validCost = Validation.requirePositive(costPerDay);
@@ -65,11 +58,7 @@ public class ItemService {
         return new ItemDetails(item, ownerUsername);
     }
 
-    /**
-     * AVAILABLE or RENTED -> UNLISTED. An item delisted while rented stays "out"; its active rental is untouched
-     * @throws com.rentaltracker.exception.NotFoundException no item with this id
-     * @throws com.rentaltracker.exception.InvalidStateTransitionException already unlisted
-     */
+    // AVAILABLE or RENTED -> UNLISTED. An item delisted while rented stays "out"; its active rental is untouched
     public Item delist(long itemId) {
         Item item = items.getById(itemId);
         Item unlisted = item.transitionTo(ItemStatus.UNLISTED);
@@ -77,12 +66,8 @@ public class ItemService {
         return unlisted;
     }
 
-    /**
-     * UNLISTED -> AVAILABLE, only when the item has no active rental.
-     * @throws com.rentaltracker.exception.NotFoundException no item with this id
-     * @throws com.rentaltracker.exception.InvalidStateTransitionException the item is not currently unlisted
-     * @throws BusinessRuleException the item is still out on an active rental
-     */
+    // UNLISTED -> AVAILABLE, only when the item has no active rental.
+
     public Item relist(long itemId) {
         return transactor.inTransaction(() -> {
             Item item = items.getById(itemId);

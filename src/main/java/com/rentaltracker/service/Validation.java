@@ -4,14 +4,8 @@ import com.rentaltracker.exception.ValidationException;
 
 import java.math.BigDecimal;
 
-/**
- * Package-private input checks shared by the three services. Kept in one place so a rule (e.g. "minimum 1 day")
- * is defined once and every service enforces the same wording of the error.
- *
- * <p>Deliberately NOT in the domain layer: these are business rules about acceptable input (team decisions,
- * changeable by discussion), not structural rules about the state machine. Domain records stay unvalidated
- * on purpose (see docs/architecture.md, D5) so tests can push invalid data at the database directly.
- */
+// Package-private input checks shared by the three services.
+// Kept in one place so a rule (e.g. "minimum 1 day")is defined once and every service enforces the same wording of the error.
 final class Validation {
 
     /** The minimum number of days for a rental. */

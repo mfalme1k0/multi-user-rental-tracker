@@ -5,21 +5,7 @@ import com.rentaltracker.exception.InvalidStateTransitionException;
 import java.util.EnumSet;
 import java.util.Set;
 
-/**
- * Item lifecycle as a state machine. The ONLY place that knows which moves are legal:
- *
- * <pre>
- *   (list)      -> AVAILABLE
- *   AVAILABLE   -> RENTED     record rental
- *   AVAILABLE   -> UNLISTED   delist
- *   RENTED      -> AVAILABLE  confirm return
- *   RENTED      -> UNLISTED   delist while out
- *   UNLISTED    -> AVAILABLE  relist (service additionally requires: no active rental)
- * </pre>
- *
- * The "no active rental" guard for relisting is a cross-entity rule (it needs the rentals table), so it lives in
- * {@code ItemService}, not here. This enum answers only "is this pair of statuses a legal move?".
- */
+// Item lifecycle as a state machine.
 public enum ItemStatus {
     AVAILABLE("available"),
     RENTED("rented"),
@@ -35,11 +21,6 @@ public enum ItemStatus {
     public String dbValue() {
         return dbValue;
     }
-
-    /**
-     * @throws IllegalArgumentException for unknown text. The repository wraps this in a
-     *         {@code MappingException}; the domain stays free of persistence exceptions.
-     */
     public static ItemStatus fromDbValue(String value) {
         for (ItemStatus status : values()) {
             if (status.dbValue.equals(value)) {

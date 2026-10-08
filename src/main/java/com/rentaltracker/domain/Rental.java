@@ -2,13 +2,7 @@ package com.rentaltracker.domain;
 
 import java.time.LocalDateTime;
 
-/**
- * One rental. Never deleted: closed rentals are the history of who had what and when.
- *
- * @param id         null until inserted
- * @param endTime    start time plus the rental duration (the due date)
- * @param returnedAt null until the item is returned
- */
+// One rental. Never deleted: closed rentals are the history of who had what and when.
 public record Rental(
         Long id,
         Long itemId,

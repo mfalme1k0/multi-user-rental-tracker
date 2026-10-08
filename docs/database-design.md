@@ -34,6 +34,8 @@ The database contains three tables:
 
 The relationships between these tables represent users who own listed items, users who rent those items, and the rental history of each item.
 
+The database also enforces important domain invariants at the persistence level. These include valid item and rental statuses, valid rental durations, referential integrity, valid monetary values, and at most one active rental per item.
+
 ---
 
 ## 2. Entity Relationship Diagram
@@ -62,6 +64,11 @@ A listed item can have many rental records over its lifetime.
 
 A user can also have many rentals as a renter.
 
+The `users` table therefore participates in the rental relationship in two different roles:
+
+* as the owner of the rented item
+* as the renter of the item
+
 ---
 
 ## 3. `users`
@@ -78,10 +85,10 @@ The `users` table stores users of the application.
 
 ```sql
 CREATE TABLE users (
-                       id INTEGER PRIMARY KEY,
-                       username TEXT NOT NULL UNIQUE,
-                       created_at TEXT NOT NULL
-                           DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 ```
 
@@ -93,6 +100,8 @@ CREATE TABLE users (
 
 SQLite generates the identifier when a new user is inserted.
 
+The identifier is used by other tables when creating relationships with the user.
+
 #### `NOT NULL`
 
 `username` must exist because a user cannot be identified without a username.
@@ -102,6 +111,8 @@ SQLite generates the identifier when a new user is inserted.
 #### `UNIQUE`
 
 `username` must be unique so that two users cannot have the same username.
+
+Relationships between users and other records use the stable numeric `id` rather than the username. This means that a username can be changed without requiring foreign-key references to be updated.
 
 ---
 
@@ -123,23 +134,23 @@ The `listed_items` table stores items that users have listed for rental.
 
 ```sql
 CREATE TABLE listed_items (
-                              id INTEGER PRIMARY KEY,
-                              owner_id INTEGER NOT NULL,
-                              name TEXT NOT NULL,
-                              description TEXT,
-                              cost_per_day TEXT NOT NULL CHECK (
-                                  cost_per_day NOT GLOB '*[^0-9.]*'
-                                  AND length(cost_per_day) > 0
-                                  AND length(cost_per_day)
-                                  - length(replace(cost_per_day, '.', '')) <= 1
-                                  AND substr(cost_per_day, 1, 1) GLOB '[0-9]'
-                                  AND substr(cost_per_day, -1, 1) GLOB '[0-9]'
-                                  AND replace(
-                                  replace(cost_per_day, '0', ''),
-                                  '.',
-                                  ''
-                                  ) <> ''
-),
+    id INTEGER PRIMARY KEY,
+    owner_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    cost_per_day TEXT NOT NULL CHECK (
+        cost_per_day NOT GLOB '*[^0-9.]*'
+        AND length(cost_per_day) > 0
+        AND length(cost_per_day)
+            - length(replace(cost_per_day, '.', '')) <= 1
+        AND substr(cost_per_day, 1, 1) GLOB '[0-9]'
+        AND substr(cost_per_day, -1, 1) GLOB '[0-9]'
+        AND replace(
+            replace(cost_per_day, '0', ''),
+            '.',
+            ''
+        ) <> ''
+    ),
     status TEXT NOT NULL CHECK (
         status IN ('available', 'rented', 'unlisted')
     ),
@@ -158,7 +169,15 @@ CREATE TABLE listed_items (
 
 This ensures that every listed item belongs to an existing user.
 
+```sql
+FOREIGN KEY (owner_id)
+REFERENCES users(id)
+ON DELETE RESTRICT
+```
+
 `ON DELETE RESTRICT` prevents a user from being deleted while they still own listed items.
+
+This preserves the ownership relationship and prevents orphaned item records.
 
 ### `cost_per_day`
 
@@ -184,9 +203,17 @@ SQLite TEXT
 BigDecimal
 ```
 
-The database `CHECK` constraint ensures that the stored value has a valid decimal-number format and represents a positive value.
+The database `CHECK` constraint ensures that the stored value:
 
-This provides database-level protection against invalid monetary values even if Java-side validation is bypassed.
+* contains only decimal digits and at most one decimal point
+* is not empty
+* begins with a digit
+* ends with a digit
+* contains at least one non-zero digit
+
+This provides database-level protection against invalid or non-positive monetary values even if Java-side validation is bypassed.
+
+Keeping the database representation as `TEXT` also avoids relying on floating-point storage for monetary values.
 
 ### `status`
 
@@ -204,11 +231,17 @@ The Java `ItemStatus` enum maps to these database values.
 
 The legality of transitions between statuses is handled by the domain model rather than by the database.
 
+The database therefore validates the set of possible states, while the application controls how an item moves between those states.
+
 ---
 
 ## 5. `rentals`
 
 The `rentals` table stores rental transactions and rental history.
+
+A rental represents a historical transaction rather than simply the current state of an item.
+
+When an item is rented again after a previous rental has been closed, a new rental row is created. Previous rental records are retained.
 
 | Column        | SQLite type | Constraints               | Purpose                              |
 | ------------- | ----------- | ------------------------- | ------------------------------------ |
@@ -224,24 +257,24 @@ The `rentals` table stores rental transactions and rental history.
 
 ```sql
 CREATE TABLE rentals (
-                         id INTEGER PRIMARY KEY,
-                         item_id INTEGER NOT NULL,
-                         renter_id INTEGER NOT NULL,
-                         start_time TEXT NOT NULL,
-                         end_time TEXT NOT NULL,
-                         returned_at TEXT,
-                         status TEXT NOT NULL CHECK (
-                             status IN ('active', 'closed')
-                             ),
-                         CHECK (end_time > start_time),
+    id INTEGER PRIMARY KEY,
+    item_id INTEGER NOT NULL,
+    renter_id INTEGER NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    returned_at TEXT,
+    status TEXT NOT NULL CHECK (
+        status IN ('active', 'closed')
+    ),
+    CHECK (end_time > start_time),
 
-                         FOREIGN KEY (item_id)
-                             REFERENCES listed_items(id)
-                             ON DELETE RESTRICT,
+    FOREIGN KEY (item_id)
+        REFERENCES listed_items(id)
+        ON DELETE RESTRICT,
 
-                         FOREIGN KEY (renter_id)
-                             REFERENCES users(id)
-                             ON DELETE RESTRICT
+    FOREIGN KEY (renter_id)
+        REFERENCES users(id)
+        ON DELETE RESTRICT
 );
 ```
 
@@ -250,6 +283,12 @@ CREATE TABLE rentals (
 `item_id` references `listed_items.id`.
 
 This prevents a rental from referring to an item that does not exist.
+
+```sql
+FOREIGN KEY (item_id)
+REFERENCES listed_items(id)
+ON DELETE RESTRICT
+```
 
 `ON DELETE RESTRICT` prevents an item from being deleted while it has rental records.
 
@@ -261,7 +300,15 @@ Rental records form part of an item's history and should not disappear simply be
 
 This ensures that every rental has an existing user as the renter.
 
+```sql
+FOREIGN KEY (renter_id)
+REFERENCES users(id)
+ON DELETE RESTRICT
+```
+
 `ON DELETE RESTRICT` prevents a user from being deleted while they are referenced by rental records.
+
+This preserves historical rental information.
 
 ### `start_time` and `end_time`
 
@@ -275,7 +322,23 @@ CHECK (end_time > start_time)
 
 This prevents zero-length and negative-length rentals at the database level.
 
+For example, the following is invalid:
+
+```text
+start_time = 2026-10-07T10:00:00.000Z
+end_time   = 2026-10-07T10:00:00.000Z
+```
+
+and:
+
+```text
+start_time = 2026-10-07T11:00:00.000Z
+end_time   = 2026-10-07T10:00:00.000Z
+```
+
 The Java application also validates rental duration before persistence.
+
+The database constraint acts as a second line of protection.
 
 ### `returned_at`
 
@@ -294,6 +357,8 @@ For a closed rental:
 status = closed
 returned_at = return timestamp
 ```
+
+The service/domain layer is responsible for ensuring that the lifecycle of the rental is handled consistently.
 
 ### `status`
 
@@ -347,6 +412,8 @@ item 10 → rental 2 → active
 
 The database therefore enforces the invariant rather than relying only on application logic.
 
+This is important because application-level checks alone can be bypassed by a programming error or by another database operation.
+
 ---
 
 ## 7. Relationships
@@ -369,6 +436,10 @@ REFERENCES users(id)
 ON DELETE RESTRICT
 ```
 
+This means every listed item must have an existing owner.
+
+A user cannot be deleted while they still own listed items.
+
 ### Listed Item → Rentals
 
 One listed item can have many rental records over its lifetime.
@@ -386,6 +457,19 @@ FOREIGN KEY (item_id)
 REFERENCES listed_items(id)
 ON DELETE RESTRICT
 ```
+
+This allows rental history to remain associated with the item.
+
+An item can therefore have:
+
+```text
+closed rental
+closed rental
+closed rental
+active rental
+```
+
+over its lifetime.
 
 ### User → Rentals as Renter
 
@@ -405,10 +489,12 @@ REFERENCES users(id)
 ON DELETE RESTRICT
 ```
 
-The `users` table therefore participates in two different relationships involving rentals:
+The `users` table therefore participates in rentals in two different roles:
 
 * as the owner of the rented item through `listed_items.owner_id`
 * as the renter through `rentals.renter_id`
+
+These are separate relationships even though both ultimately reference `users.id`.
 
 ---
 
@@ -428,6 +514,34 @@ The `users` table therefore participates in two different relationships involvin
 | `CHECK`              | `rentals.status`                   | Restricts rental status to known values            |
 | `CHECK`              | `rentals.end_time`                 | Requires the rental to have a positive duration    |
 | Partial unique index | `rentals.item_id`                  | Allows at most one active rental per item          |
+
+The database therefore provides integrity protection at several levels:
+
+```text
+Primary keys
+    ↓
+Record identity
+
+Foreign keys
+    ↓
+Relationship integrity
+
+NOT NULL
+    ↓
+Required data
+
+UNIQUE
+    ↓
+Uniqueness
+
+CHECK
+    ↓
+Valid values
+
+Partial unique index
+    ↓
+Cross-row business invariant
+```
 
 ---
 
@@ -454,6 +568,8 @@ Application timestamps are treated as UTC before being persisted by the SQLite r
 When timestamps are read from SQLite, they are parsed from the stored ISO-8601 representation back into Java date/time types.
 
 Using a consistent UTC representation avoids storing different local time zones in different records and makes timestamp comparison and ordering predictable.
+
+The database therefore has a single timestamp representation regardless of the local time zone of the machine running the application.
 
 ---
 
@@ -502,6 +618,8 @@ PRAGMA foreign_keys = ON;
 ```
 
 This is necessary because SQLite foreign-key enforcement must be enabled for each connection.
+
+The database initialization process therefore ensures that the same schema and foreign-key behavior are established whenever a new database is created.
 
 ---
 
@@ -578,6 +696,8 @@ The connection is released after the repository operation completes.
 
 If the operation is not running inside a transaction, the repository obtains its own connection and releases it when the operation finishes.
 
+This prevents normal repository operations from leaving connections open unnecessarily.
+
 For operations executed inside a transaction, the transaction owns the connection:
 
 ```text
@@ -619,7 +739,9 @@ A successful transaction is committed.
 
 If a `RuntimeException` is thrown during the transaction, the transaction is rolled back and the exception is rethrown.
 
-Nested transaction calls join the existing transaction rather than creating a second transaction.
+Nested transaction calls join the existing transaction rather than creating a second independent transaction.
+
+This keeps the transaction boundary at the application/service level while allowing multiple repository operations to participate in the same atomic database operation.
 
 ---
 
@@ -668,6 +790,8 @@ The seeded database is development/demo data.
 
 `schema.sql` remains the authoritative definition of the database structure and constraints.
 
+The seed database should therefore not be treated as a second schema definition.
+
 ---
 
 ## 14. Testing the Persistence Layer
@@ -699,6 +823,45 @@ Repository
 
 Tests should construct the data they need through the repository layer rather than depending on a shared pre-populated database.
 
+This makes tests deterministic and prevents one test from influencing another.
+
+### User persistence tests
+
+Important cases include:
+
+* creating a user
+* retrieving a user
+* retrieving a missing user
+* preventing duplicate usernames
+
+### Item persistence tests
+
+Important cases include:
+
+* creating an item
+* retrieving an item
+* retrieving items by owner
+* preventing invalid item statuses
+* preventing invalid rental costs
+* rejecting an item whose owner does not exist
+* preventing deletion of referenced owners
+
+### Rental persistence tests
+
+Important cases include:
+
+* creating an active rental
+* creating a closed rental
+* retrieving a rental
+* retrieving rental history
+* rejecting a rental for a missing item
+* rejecting a rental for a missing renter
+* rejecting invalid rental durations
+* preventing more than one active rental for the same item
+* preserving closed rental history
+
+### Transaction tests
+
 Transaction behaviour is tested using real SQLite databases.
 
 The transaction tests cover:
@@ -707,6 +870,38 @@ The transaction tests cover:
 * `RuntimeException` causing rollback
 * nested transactions joining the outer transaction
 * failures in nested transactions causing the outer transaction to roll back
+
+### Connection lifecycle tests
+
+Connection management should also be verified.
+
+The expected behavior is:
+
+```text
+Normal repository operation
+        ↓
+Create/acquire connection
+        ↓
+Execute operation
+        ↓
+Release connection
+```
+
+while a transaction behaves as:
+
+```text
+Begin transaction
+        ↓
+Acquire transaction connection
+        ↓
+Multiple repository operations
+        ↓
+Commit / rollback
+        ↓
+Close transaction connection
+```
+
+A repository participating in an active transaction must not prematurely close the shared transaction connection.
 
 Persistence tests should remain independent from the CLI and `Main`.
 
@@ -724,7 +919,73 @@ docs/er-diagram.png
 
 The diagram represents the three tables and their foreign-key relationships.
 
+The relationships are:
+
+```text
+users
+  │
+  ├──< listed_items
+  │       │
+  │       └──< rentals
+  │
+  └──< rentals
+```
+
 The `users` entity participates in rentals in two different roles:
 
 * owner of the rented item
 * renter of the item
+
+The diagram should remain synchronized with `schema.sql`.
+
+Whenever a table, relationship, foreign key, or important database constraint is changed, the ER diagram should be reviewed to ensure that it still represents the implemented schema.
+
+---
+
+## Database Implementation Status
+
+The database layer now provides the persistence foundation required by the rest of the application.
+
+### Completed
+
+* [x] SQLite database integration
+* [x] Configurable database path
+* [x] `DatabaseManager`
+* [x] `users` table
+* [x] `listed_items` table
+* [x] `rentals` table
+* [x] Primary keys
+* [x] Foreign keys
+* [x] `ON DELETE RESTRICT`
+* [x] Username uniqueness
+* [x] Item status constraints
+* [x] Rental status constraints
+* [x] Monetary value validation
+* [x] Rental duration validation
+* [x] One-active-rental-per-item constraint
+* [x] UTC timestamp storage
+* [x] Schema initialization
+* [x] Explicit SQLite foreign-key enforcement
+* [x] Repository connection lifecycle
+* [x] Transaction-aware connection management
+* [x] Commit and rollback handling
+* [x] Nested transaction handling
+* [x] Seed database
+* [x] Persistence testing using SQLite
+
+### Remaining / Integration Work
+
+The database layer should now primarily be treated as a foundation for the remaining application layers.
+
+The next work should focus on:
+
+1. Completing and verifying service-layer workflows.
+2. Ensuring service operations use the repository interfaces rather than accessing SQLite directly.
+3. Verifying transaction boundaries around operations that modify multiple records.
+4. Integrating the repositories and services with the CLI.
+5. Running end-to-end tests through the application flow.
+6. Keeping `schema.sql`, the ER diagram, and this document synchronized if the domain changes.
+
+The database layer should not be expanded with additional tables or constraints unless a new application requirement requires them.
+
+The current schema provides the relational structure, integrity constraints, historical rental records, and transaction support required by the current Rental Tracker domain.

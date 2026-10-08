@@ -7,14 +7,17 @@ import com.rentaltracker.domain.Rental;
 import com.rentaltracker.exception.BusinessRuleException;
 import com.rentaltracker.exception.InvalidStateTransitionException;
 import com.rentaltracker.exception.ValidationException;
-import com.rentaltracker.service.fake.FakeItemRepository;
-import com.rentaltracker.service.fake.FakeRentalRepository;
-import com.rentaltracker.service.fake.FakeTransactor;
-import com.rentaltracker.service.fake.FakeUserRepository;
+import com.rentaltracker.infrastructure.DatabaseManager;
+import com.rentaltracker.repository.sqlite.SQLiteItemRepository;
+import com.rentaltracker.repository.sqlite.SQLiteRentalRepository;
+import com.rentaltracker.repository.sqlite.SQLiteTransactor;
+import com.rentaltracker.repository.sqlite.SQLiteUserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -24,18 +27,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ItemServiceTest {
 
-    private FakeItemRepository items;
-    private FakeRentalRepository rentals;
-    private FakeUserRepository users;
+    @TempDir
+    Path tempDir;
+
+    private SQLiteItemRepository items;
+    private SQLiteRentalRepository rentals;
+    private SQLiteUserRepository users;
     private ItemService service;
     private long ownerId;
 
     @BeforeEach
     void setUp() {
-        items = new FakeItemRepository();
-        rentals = new FakeRentalRepository();
-        users = new FakeUserRepository();
-        service = new ItemService(items, rentals, users, new FakeTransactor());
+        DatabaseManager db = createDatabase();
+        items = new SQLiteItemRepository(db);
+        rentals = new SQLiteRentalRepository(db);
+        users = new SQLiteUserRepository(db);
+        SQLiteTransactor transactor = new SQLiteTransactor(db);
+        service = new ItemService(items, rentals, users, transactor);
         ownerId = users.insert(com.rentaltracker.domain.User.newUser("owner")).id();
     }
 
@@ -103,11 +111,19 @@ class ItemServiceTest {
     @Test
     void relistIsBlockedWhileAnActiveRentalExists() {
         Item item = service.listItem(ownerId, "Ladder", "d", BigDecimal.ONE);
+        long renterId = users.insert(com.rentaltracker.domain.User.newUser("renter")).id();
         items.updateStatus(item.id(), ItemStatus.RENTED);
         service.delist(item.id()); // delisted while out -> UNLISTED, rental still active
-        rentals.insert(Rental.newActive(item.id(), 999L, LocalDateTime.now(), LocalDateTime.now().plusDays(1)));
+        rentals.insert(Rental.newActive(item.id(), renterId, LocalDateTime.now(), LocalDateTime.now().plusDays(1)));
 
         BusinessRuleException ex = assertThrows(BusinessRuleException.class, () -> service.relist(item.id()));
         assertTrue(ex.getMessage().contains("active rental"));
+    }
+
+    private DatabaseManager createDatabase() {
+        Path database = tempDir.resolve("rental-tracker.db");
+        DatabaseManager databaseManager = new DatabaseManager(database);
+        databaseManager.initialize();
+        return databaseManager;
     }
 }
