@@ -30,15 +30,10 @@ public final class SQLiteTransactor implements Transactor {
         try {
             result = work.get();
         } catch (RuntimeException | Error failure) {
-            // Errors too: otherwise the transaction stays bound to this thread and
-            // the next inTransaction call would join it and never commit.
             rollbackAfter(failure);
             throw failure;
         }
 
-        // Kept outside the try above on purpose. commitTransaction() releases the
-        // connection even when COMMIT fails, so rolling back afterwards would throw
-        // "No active database transaction" and hide the real commit error.
         databaseManager.commitTransaction();
 
         return result;

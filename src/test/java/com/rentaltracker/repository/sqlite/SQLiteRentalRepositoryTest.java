@@ -4,6 +4,7 @@ import com.rentaltracker.domain.*;
 import com.rentaltracker.exception.NotFoundException;
 import com.rentaltracker.exception.UniqueConstraintException;
 import com.rentaltracker.infrastructure.DatabaseManager;
+import com.rentaltracker.exception.ForeignKeyConstraintException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -658,5 +659,21 @@ class SQLiteRentalRepositoryTest {
         );
 
         assertNull(updated.returnedAt());
+    }
+    @Test
+    void rejectsRentalForNonexistentItem() {
+        User renter = userRepository.insert(User.newUser("renter"));
+
+        Rental rental = Rental.newActive(
+                999L,                                   // no item with this id exists
+                renter.id(),
+                LocalDateTime.of(2026, 9, 28, 10, 0),
+                LocalDateTime.of(2026, 9, 30, 10, 0)
+        );
+
+        assertThrows(
+                ForeignKeyConstraintException.class,
+                () -> rentalRepository.insert(rental)
+        );
     }
 }

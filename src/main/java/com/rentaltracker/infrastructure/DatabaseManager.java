@@ -7,20 +7,55 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 
 public final class DatabaseManager {
 
-    private final Path databasePath;
+    private static final int SCHEMA_VERSION = 1;
 
+    private final Path databasePath;
+    private final ConnectionFactory connectionFactory;
 
     private final ThreadLocal<Connection> transactionConnection =
             new ThreadLocal<>();
 
     public DatabaseManager(Path databasePath) {
-        this.databasePath = databasePath;
+        this(databasePath, sqliteFactory(databasePath));
     }
 
+    DatabaseManager(Path databasePath, ConnectionFactory connectionFactory) {
+        if (databasePath == null) {
+            throw new IllegalArgumentException(
+                    "Database path must not be null"
+            );
+        }
+
+        if (connectionFactory == null) {
+            throw new IllegalArgumentException(
+                    "Connection factory must not be null"
+            );
+        }
+
+        this.databasePath = databasePath;
+        this.connectionFactory = connectionFactory;
+    }
+
+    @FunctionalInterface
+    interface ConnectionFactory {
+        Connection open() throws SQLException;
+    }
+
+    private static ConnectionFactory sqliteFactory(Path databasePath) {
+        return () -> DriverManager.getConnection(
+                "jdbc:sqlite:" + databasePath
+        );
+    }
+
+    //return active connection, if none exists create one
     public Connection getConnection() {
         Connection activeConnection = transactionConnection.get();
 
@@ -31,7 +66,7 @@ public final class DatabaseManager {
         return createConnection();
     }
 
-
+    //release normal repository connection
     public void releaseConnection(Connection connection) {
         if (connection == null) {
             return;
@@ -78,35 +113,61 @@ public final class DatabaseManager {
         }
     }
 
-
+    //commit transaction and release connection
     public void commitTransaction() {
         Connection connection = requireTransactionConnection();
+        RuntimeException failure = null;
 
         try {
             connection.commit();
         } catch (SQLException e) {
-            throw new DatabaseConnectionException(
+            failure = new DatabaseConnectionException(
                     "Could not commit database transaction",
                     e
             );
-        } finally {
+        }
+
+        try {
             closeTransactionConnection();
+        } catch (RuntimeException closeException) {
+            if (failure != null) {
+                failure.addSuppressed(closeException);
+            } else {
+                failure = closeException;
+            }
+        }
+
+        if (failure != null) {
+            throw failure;
         }
     }
 
 
     public void rollbackTransaction() {
         Connection connection = requireTransactionConnection();
+        RuntimeException failure = null;
 
         try {
             connection.rollback();
         } catch (SQLException e) {
-            throw new DatabaseConnectionException(
+            failure = new DatabaseConnectionException(
                     "Could not roll back database transaction",
                     e
             );
-        } finally {
+        }
+
+        try {
             closeTransactionConnection();
+        } catch (RuntimeException closeException) {
+            if (failure != null) {
+                failure.addSuppressed(closeException);
+            } else {
+                failure = closeException;
+            }
+        }
+
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -114,9 +175,17 @@ public final class DatabaseManager {
         return transactionConnection.get() != null;
     }
 
+    /**
+     * Creates the database directory, executes schema.sql, and applies
+     * any required schema upgrade.
+     */
     public void initialize() {
         try {
-            Files.createDirectories(databasePath.toAbsolutePath().getParent());
+            Path parent = databasePath.toAbsolutePath().getParent();
+
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
         } catch (IOException e) {
             throw new DatabaseConnectionException(
                     "Could not create database directory",
@@ -128,22 +197,13 @@ public final class DatabaseManager {
              InputStream input =
                      DatabaseManager.class.getResourceAsStream("/schema.sql")) {
 
-            if (input == null) {
-                throw new DatabaseConnectionException(
-                        "schema.sql not found"
-                );
-            }
-
-            String schema =
-                    new String(
-                            input.readAllBytes(),
-                            StandardCharsets.UTF_8
-                    );
+            String schema = readSchema(input);
 
             try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate(schema);
-                migrate(connection);
             }
+
+            migrate(connection);
 
         } catch (IOException | SQLException e) {
             throw new DatabaseConnectionException(
@@ -153,13 +213,25 @@ public final class DatabaseManager {
         }
     }
 
-    private Connection createConnection() {
-        try {
-            String databaseUrl =
-                    "jdbc:sqlite:" + databasePath;
 
-            Connection connection =
-                    DriverManager.getConnection(databaseUrl);
+    static String readSchema(InputStream input) throws IOException {
+        if (input == null) {
+            throw new DatabaseConnectionException(
+                    "schema.sql not found"
+            );
+        }
+
+        return new String(
+                input.readAllBytes(),
+                StandardCharsets.UTF_8
+        );
+    }
+
+    private Connection createConnection() {
+        Connection connection = null;
+
+        try {
+            connection = connectionFactory.open();
 
             try (Statement statement = connection.createStatement()) {
                 statement.execute("PRAGMA foreign_keys = ON");
@@ -168,6 +240,14 @@ public final class DatabaseManager {
             return connection;
 
         } catch (SQLException e) {
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (SQLException closeException) {
+                    e.addSuppressed(closeException);
+                }
+            }
+
             throw new DatabaseConnectionException(
                     "Could not connect to database",
                     e
@@ -186,6 +266,7 @@ public final class DatabaseManager {
 
         return connection;
     }
+
 
     private void closeTransactionConnection() {
         Connection connection = transactionConnection.get();
@@ -206,68 +287,177 @@ public final class DatabaseManager {
         }
     }
 
-    private static final int SCHEMA_VERSION = 1;
-
 
     private void migrate(Connection connection) throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            int version;
-            try (ResultSet rs = statement.executeQuery("PRAGMA user_version")) {
-                version = rs.getInt(1);
-            }
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet =
+                     statement.executeQuery("PRAGMA user_version")) {
+
+            int version = resultSet.getInt(1);
+
             if (version >= SCHEMA_VERSION) {
                 return;
             }
+        }
+
+        upgrade(connection);
+    }
+
+
+    private void upgrade(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
             if (usersTableIsCaseSensitive(statement)) {
                 rebuildUsersTable(connection, statement);
             } else {
-                statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+                statement.execute(
+                        "PRAGMA user_version = " + SCHEMA_VERSION
+                );
             }
         }
     }
 
-    private boolean usersTableIsCaseSensitive(Statement statement) throws SQLException {
-        try (ResultSet rs = statement.executeQuery(
-                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'")) {
-            return !rs.getString(1).toUpperCase().contains("COLLATE NOCASE");
+    private boolean usersTableIsCaseSensitive(Statement statement)
+            throws SQLException {
+
+        try (ResultSet resultSet = statement.executeQuery(
+                "SELECT sql FROM sqlite_master "
+                        + "WHERE type = 'table' AND name = 'users'")) {
+
+            if (!resultSet.next()) {
+                throw new SQLException(
+                        "Cannot inspect users table: table does not exist"
+                );
+            }
+
+            String tableDefinition = resultSet.getString(1);
+
+            return tableDefinition == null
+                    || !tableDefinition.toUpperCase()
+                    .contains("COLLATE NOCASE");
         }
     }
 
-    private void rebuildUsersTable(Connection connection, Statement statement) throws SQLException {
+    private void rebuildUsersTable(
+            Connection connection,
+            Statement statement
+    ) throws SQLException {
+
         try (ResultSet rs = statement.executeQuery(
                 "SELECT lower(username), group_concat(id) FROM users "
                         + "GROUP BY lower(username) HAVING count(*) > 1")) {
+
             if (rs.next()) {
-                throw new SQLException("Cannot migrate: usernames differing only by case: "
-                        + rs.getString(1) + " (ids " + rs.getString(2) + "). Merge them first.");
+                throw new SQLException(
+                        "Cannot migrate: usernames differing only by case: "
+                                + rs.getString(1)
+                                + " (ids "
+                                + rs.getString(2)
+                                + "). Merge them first."
+                );
             }
         }
 
-        statement.execute("PRAGMA foreign_keys = OFF");   // must be outside a transaction
-        connection.setAutoCommit(false);
+
+
+        Throwable failure = null;
+        boolean transactionStarted = false;
+        boolean rollbackFailed = false;
+
         try {
+            connection.setAutoCommit(false);
+            transactionStarted = true;
+
             statement.execute("""
-                CREATE TABLE users_new (
-                  id INTEGER PRIMARY KEY,
-                  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))""");
-            statement.execute("INSERT INTO users_new (id, username, created_at) "
-                    + "SELECT id, username, created_at FROM users");
+            CREATE TABLE users_new (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                created_at TEXT NOT NULL DEFAULT (
+                    strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                )
+            )
+            """);
+
+            statement.execute("""
+            INSERT INTO users_new (id, username, created_at)
+            SELECT id, username, created_at FROM users
+            """);
+
             statement.execute("DROP TABLE users");
             statement.execute("ALTER TABLE users_new RENAME TO users");
-            try (ResultSet rs = statement.executeQuery("PRAGMA foreign_key_check")) {
+
+            try (ResultSet rs =
+                         statement.executeQuery("PRAGMA foreign_key_check")) {
+
                 if (rs.next()) {
-                    throw new SQLException("Migration left dangling foreign keys");
+                    throw new SQLException(
+                            "Migration left dangling foreign keys"
+                    );
                 }
             }
+
             statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
+
             connection.commit();
-        } catch (SQLException | RuntimeException e) {
-            connection.rollback();
-            throw e;
-        } finally {
-            connection.setAutoCommit(true);
-            statement.execute("PRAGMA foreign_keys = ON");
+            transactionStarted = false;
+
+        } catch (SQLException | RuntimeException migrationFailure) {
+            failure = migrationFailure;
+
+            if (transactionStarted) {
+                try {
+                    connection.rollback();
+                    transactionStarted = false;
+                } catch (SQLException rollbackFailure) {
+                    migrationFailure.addSuppressed(rollbackFailure);
+                    rollbackFailed = true;
+                }
+            }
+        }
+
+
+        if (!rollbackFailed) {
+            boolean autoCommitRestored = false;
+
+            try {
+                if (!connection.getAutoCommit()) {
+                    connection.setAutoCommit(true);
+                }
+
+                autoCommitRestored = true;
+
+            } catch (SQLException cleanupFailure) {
+                failure = recordFailure(failure, cleanupFailure);
+            }
+
+            // Re-enable foreign keys only after auto-commit is restored.
+            if (autoCommitRestored) {
+                try {
+                    statement.execute("PRAGMA foreign_keys = ON");
+                } catch (SQLException cleanupFailure) {
+                    failure = recordFailure(failure, cleanupFailure);
+                }
+            }
+        }
+
+        if (failure instanceof SQLException sqlFailure) {
+            throw sqlFailure;
+        }
+
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
         }
     }
+
+    private static Throwable recordFailure(
+            Throwable originalFailure,
+            SQLException cleanupFailure
+    ) {
+        if (originalFailure == null) {
+            return cleanupFailure;
+        }
+
+        originalFailure.addSuppressed(cleanupFailure);
+        return originalFailure;
+    }
 }
+
