@@ -15,7 +15,7 @@ import java.sql.Statement;
 
 public final class DatabaseManager {
 
-    private static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 1;
 
     private final Path databasePath;
     private final ConnectionFactory connectionFactory;
@@ -175,10 +175,6 @@ public final class DatabaseManager {
         return transactionConnection.get() != null;
     }
 
-    /**
-     * Creates the database directory, executes schema.sql, and applies
-     * any required schema upgrade.
-     */
     public void initialize() {
         try {
             Path parent = databasePath.toAbsolutePath().getParent();

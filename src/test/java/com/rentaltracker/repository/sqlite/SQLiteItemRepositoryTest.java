@@ -382,5 +382,23 @@ class SQLiteItemRepositoryTest {
                 )
         );
     }
-}
 
+    @Test
+    void getByIdThrowsWhenItemDoesNotExist() {
+        SQLiteItemRepository repository =
+                new SQLiteItemRepository(createDatabase());
+
+        assertThrows(
+                NotFoundException.class,
+                () -> repository.getById(999L)
+        );
+    }
+
+    @Test
+    void findByIdReturnsEmptyWhenItemDoesNotExist() {
+        SQLiteItemRepository repository =
+                new SQLiteItemRepository(createDatabase());
+
+        assertTrue(repository.findById(999L).isEmpty());
+    }
+}

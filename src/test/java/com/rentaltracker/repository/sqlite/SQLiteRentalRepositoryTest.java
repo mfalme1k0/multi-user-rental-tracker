@@ -676,4 +676,22 @@ class SQLiteRentalRepositoryTest {
                 () -> rentalRepository.insert(rental)
         );
     }
+
+    @Test
+    void insertStoresReturnTimeOfAnAlreadyClosedRental() {
+        User owner = userRepository.insert(User.newUser("owner"));
+        User renter = userRepository.insert(User.newUser("renter"));
+        Item item = itemRepository.insert(
+                Item.newListing(owner.id(), "Camera", null, new BigDecimal("10")));
+        LocalDateTime start = LocalDateTime.of(2026, 9, 1, 10, 0);
+        LocalDateTime returned = LocalDateTime.of(2026, 9, 2, 8, 30);
+
+        Rental saved = rentalRepository.insert(
+                Rental.newActive(item.id(), renter.id(), start, start.plusDays(2))
+                        .closedAt(returned));
+
+        assertEquals(RentalStatus.CLOSED, saved.status());
+        assertEquals(returned, saved.returnedAt());
+        assertEquals(saved, rentalRepository.getById(saved.id()));
+    }
 }
