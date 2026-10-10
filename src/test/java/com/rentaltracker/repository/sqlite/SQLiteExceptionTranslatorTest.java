@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -71,6 +72,17 @@ class SQLiteExceptionTranslatorTest {
                 SQLiteExceptionTranslator.translate(cause);
 
         assertInstanceOf(DatabaseException.class, result);
+        assertSame(cause, result.getCause());
+    }
+
+    @Test
+    void translatesExceptionWithoutMessageToDatabaseException() {
+        SQLException cause = new SQLException();   // getMessage() is null
+
+        DatabaseException result =
+                SQLiteExceptionTranslator.translate(cause);
+
+        assertEquals(DatabaseException.class, result.getClass());
         assertSame(cause, result.getCause());
     }
 }

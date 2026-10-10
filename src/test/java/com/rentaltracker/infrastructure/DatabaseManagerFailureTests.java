@@ -27,11 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Failure paths of {@link DatabaseManager}: the ones a healthy SQLite file never produces.
- * Connections that fail on demand are real connections wrapped in a {@link Proxy}, so
- * everything else still runs against real SQLite.
- */
+
 class DatabaseManagerFailureTest {
 
     @TempDir
