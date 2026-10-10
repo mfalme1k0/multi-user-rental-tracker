@@ -433,6 +433,52 @@ class TransportTest {
     }
 
     @Test
+    void testDelistRentedItem() {
+        User owner = users.insert(User.newUser("jackson"));
+        User renter = users.insert(User.newUser("alex"));
+
+        Item item = itemService.listItem(
+                owner.id(),
+                "Laptop",
+                "Gaming laptop",
+                new BigDecimal("500")
+        );
+
+        rentalService.recordRental(item.id(), renter.username(), 3);
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertTrue(result.contains("status         rented"));
+        assertTrue(result.contains("Item delisted."));
+        assertEquals(
+                ItemStatus.UNLISTED,
+                items.getById(item.id()).status()
+        );
+        assertEquals(
+                RentalStatus.ACTIVE,
+                rentals.findByItemId(item.id()).getFirst().status()
+        );
+    }
+
+    @Test
     void testRelistUnlistedItem() {
         User owner = users.insert(User.newUser("jackson"));
 
@@ -569,6 +615,75 @@ class TransportTest {
         assertTrue(result.contains("Invalid number."));
         assertTrue(result.contains("Invalid option."));
         assertTrue(result.contains("Goodbye."));
+    }
+
+    @Test
+    void testConfirmReturnOnLastPageCorrectsPageAfterReturn() {
+        User owner = users.insert(User.newUser("jackson"));
+
+        Rental sixthRental = null;
+
+        for (int i = 1; i <= 6; i++) {
+            User renter = users.insert(
+                    User.newUser("renter" + i)
+            );
+
+            Item item = itemService.listItem(
+                    owner.id(),
+                    "Item " + i,
+                    "Description " + i,
+                    new BigDecimal("100")
+            );
+
+            Rental rental = rentalService.recordRental(
+                    item.id(),
+                    renter.username(),
+                    3
+            );
+
+            if (i == 6) {
+                sixthRental = rental;
+            }
+        }
+
+        ByteArrayInputStream input =
+                new ByteArrayInputStream(
+                        "4\nN\n1\n1\nB\n5\n".getBytes(StandardCharsets.UTF_8)
+                );
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        System.setIn(input);
+        System.setOut(new PrintStream(output));
+
+        Transport transport = new Transport(
+                userService,
+                itemService,
+                rentalService
+        );
+
+        transport.start();
+
+        String result = output.toString(StandardCharsets.UTF_8);
+
+        assertEquals(
+                RentalStatus.CLOSED,
+                rentals.findById(sixthRental.id()).orElseThrow().status()
+        );
+
+        assertTrue(result.contains("Return confirmed successfully."));
+        assertTrue(result.contains("1) Item 1 - renter1"));
+        assertTrue(result.contains("5) Item 5 - renter5"));
+        assertTrue(result.contains("Goodbye."));
+
+        for (int i = 1; i <= 5; i++) {
+            assertEquals(
+                    RentalStatus.ACTIVE,
+                    rentals.findByItemId(
+                            items.findByOwnerId(owner.id()).get(i - 1).id()
+                    ).getFirst().status()
+            );
+        }
     }
 
     @Test
