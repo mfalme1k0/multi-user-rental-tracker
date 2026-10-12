@@ -21,7 +21,10 @@ import java.time.Clock;
 public final class Main {
 
     // Database file used when nothing overrides it, relative to the working directory.
-    private static final String DEFAULT_DATABASE_FILE = "rental-tracker.db";
+//    private static final String DEFAULT_DATABASE_FILE = "rental-tracker.db";
+
+    private static final String DEFAULT_DATABASE_FILE =
+            System.getenv().getOrDefault("DB_PATH", "rental-tracker.db");
 
     // System property that moves the database elsewhere , for testing or other purposes. If not set, the default is used.
     static final String DATABASE_PROPERTY = "rentaltracker.db";
@@ -29,11 +32,12 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
-        System.out.println("Rental Tracker");
+        System.out.println("Multi-User Rental Tracker");
 
         Path databasePath = Path.of(System.getProperty(DATABASE_PROPERTY, DEFAULT_DATABASE_FILE));
 
         DatabaseManager databaseManager = new DatabaseManager(databasePath);
+
         databaseManager.initialize();
 
         UserRepository userRepository = new SQLiteUserRepository(databaseManager);

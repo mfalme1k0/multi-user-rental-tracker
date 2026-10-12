@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    stdin_open: true
+    tty: true
+    environment:
+      DB_PATH: /data/rental-tracker.db
+    volumes:
+      - rental-tracker-data:/data
+
+volumes:
+  rental-tracker-data:
