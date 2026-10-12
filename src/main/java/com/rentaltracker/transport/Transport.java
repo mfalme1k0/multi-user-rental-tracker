@@ -284,27 +284,23 @@ public class Transport {
 //    Requests the appropriate status change from the service layer and returns the updated item for display.
     private Item changeItemStatus(Item item) {
         try {
-            if (item.status() == ItemStatus.AVAILABLE || item.status() == ItemStatus.RENTED) {
-                Item delistedItem = itemService.delist(item.id());
-
-                System.out.println("Item delisted.");
-                return delistedItem;
+            switch (item.status()) {
+                case AVAILABLE, RENTED -> {
+                    Item delistedItem = itemService.delist(item.id());
+                    System.out.println("Item delisted.");
+                    return delistedItem;
+                }
+                case UNLISTED -> {
+                    Item relistedItem = itemService.relist(item.id());
+                    System.out.println("Item relisted.");
+                    return relistedItem;
+                }
             }
-
-            if (item.status() == ItemStatus.UNLISTED) {
-                Item relistedItem = itemService.relist(item.id());
-
-                System.out.println("Item relisted.");
-                return relistedItem;
-            }
-
-            System.out.println("This item cannot be changed here.");
-            return item;
-
         } catch (BusinessRuleException e) {
             System.out.println(e.getMessage());
-            return item;
         }
+
+        return item;
     }
 
 //    Displays the owner's available items with pagination and lets them select an item to start a rental.

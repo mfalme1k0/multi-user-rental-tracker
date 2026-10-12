@@ -857,9 +857,10 @@ class DatabaseManagerTest {
                     if (methodName.equals("close")
                             && method.getParameterCount() == 0
                             && plan.failConnectionClose) {
-                        throw new SQLException(
-                                "Forced connection close failure"
-                        );
+
+                        invokeDelegate(delegate, method, args);
+
+                        throw new SQLException("Forced connection close failure");
                     }
 
                     if (methodName.equals("rollback")
