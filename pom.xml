@@ -22,6 +22,9 @@
         <surefire.version>3.5.2</surefire.version>
         <compiler.plugin.version>3.13.0</compiler.plugin.version>
         <exec.plugin.version>3.5.0</exec.plugin.version>
+        <password4j.version>1.8.4</password4j.version>
+        <slf4j.version>2.0.20</slf4j.version>
+        <logback.version>1.6.5</logback.version>
 
         <app.main.class>com.rentaltracker.Main</app.main.class>
     </properties>
@@ -32,6 +35,24 @@
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
             <version>${sqlite.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.password4j</groupId>
+            <artifactId>password4j</artifactId>
+            <version>${password4j.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
         </dependency>
 
         <dependency>
