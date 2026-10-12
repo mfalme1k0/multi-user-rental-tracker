@@ -28,3 +28,5 @@ Thumbs.db
 
 # Never commit throw-away databases created by tests or experiments
 *.tmp.db*.db.bak
+
+htmlReport
