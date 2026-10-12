@@ -30,9 +30,11 @@ public final class SQLiteTransactor implements Transactor {
         try {
             result = work.get();
         } catch (RuntimeException | Error failure) {
+
             rollbackAfter(failure);
             throw failure;
         }
+
 
         databaseManager.commitTransaction();
 

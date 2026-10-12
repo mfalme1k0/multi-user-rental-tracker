@@ -285,18 +285,18 @@ public final class DatabaseManager {
 
 
     private void migrate(Connection connection) throws SQLException {
+        int version;
+
         try (Statement statement = connection.createStatement();
              ResultSet resultSet =
                      statement.executeQuery("PRAGMA user_version")) {
 
-            int version = resultSet.getInt(1);
-
-            if (version >= SCHEMA_VERSION) {
-                return;
-            }
+            version = resultSet.getInt(1);
         }
 
-        upgrade(connection);
+        if (version < SCHEMA_VERSION) {
+            upgrade(connection);
+        }
     }
 
 
@@ -312,7 +312,7 @@ public final class DatabaseManager {
         }
     }
 
-    private boolean usersTableIsCaseSensitive(Statement statement)
+    static boolean usersTableIsCaseSensitive(Statement statement)
             throws SQLException {
 
         try (ResultSet resultSet = statement.executeQuery(
@@ -325,12 +325,13 @@ public final class DatabaseManager {
                 );
             }
 
-            String tableDefinition = resultSet.getString(1);
-
-            return tableDefinition == null
-                    || !tableDefinition.toUpperCase()
-                    .contains("COLLATE NOCASE");
+            return isCaseSensitive(resultSet.getString(1));
         }
+    }
+
+    static boolean isCaseSensitive(String tableDefinition) {
+        return tableDefinition == null
+                || !tableDefinition.toUpperCase().contains("COLLATE NOCASE");
     }
 
     private void rebuildUsersTable(
@@ -360,6 +361,9 @@ public final class DatabaseManager {
         boolean rollbackFailed = false;
 
         try {
+            // Must run outside a transaction.
+            statement.execute("PRAGMA foreign_keys = OFF");
+
             connection.setAutoCommit(false);
             transactionStarted = true;
 

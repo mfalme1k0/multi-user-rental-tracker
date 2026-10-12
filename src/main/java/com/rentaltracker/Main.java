@@ -17,21 +17,23 @@ import com.rentaltracker.transport.Transport;
 import java.nio.file.Path;
 import java.time.Clock;
 
-/**
- * Composition root: the ONE place that builds the object graph (DatabaseManager -> repositories -> services ->
- * transport) with plain constructor injection. No static singletons; every dependency is created here and
- * passed through constructors.
- */
+
 public final class Main {
 
-    private static final Path DATABASE_PATH = Path.of("rental-tracker.db");
+    // Database file used when nothing overrides it, relative to the working directory.
+    private static final String DEFAULT_DATABASE_FILE = "rental-tracker.db";
+
+    // System property that moves the database elsewhere , for testing or other purposes. If not set, the default is used.
+    static final String DATABASE_PROPERTY = "rentaltracker.db";
 
     private Main() {}
 
     public static void main(String[] args) {
         System.out.println("Rental Tracker");
 
-        DatabaseManager databaseManager = new DatabaseManager(DATABASE_PATH);
+        Path databasePath = Path.of(System.getProperty(DATABASE_PROPERTY, DEFAULT_DATABASE_FILE));
+
+        DatabaseManager databaseManager = new DatabaseManager(databasePath);
         databaseManager.initialize();
 
         UserRepository userRepository = new SQLiteUserRepository(databaseManager);

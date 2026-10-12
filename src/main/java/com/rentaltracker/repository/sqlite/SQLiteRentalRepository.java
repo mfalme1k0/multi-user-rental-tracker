@@ -53,9 +53,9 @@ public class SQLiteRentalRepository implements RentalRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement insertStatement = connection.prepareStatement(
-                     insertSql,
-                     Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement insertStatement = connection.prepareStatement(
+                        insertSql,
+                        Statement.RETURN_GENERATED_KEYS)) {
 
             insertStatement.setLong(1, rental.itemId());
             insertStatement.setLong(2, rental.renterId());
@@ -95,12 +95,9 @@ public class SQLiteRentalRepository implements RentalRepository {
             long id;
 
             try (ResultSet generatedKeys = insertStatement.getGeneratedKeys()) {
-                if (!generatedKeys.next()) {
-                    throw new SQLException(
-                            "No generated key returned for inserted rental"
-                    );
-                }
-
+                // sqlite-jdbc always returns one row here (id 0 when nothing was inserted);
+                // the read-back below is what detects an insert that stored nothing.
+                generatedKeys.next();
                 id = generatedKeys.getLong(1);
             }
 
@@ -145,16 +142,14 @@ public class SQLiteRentalRepository implements RentalRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setLong(1, id);
 
             try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
-
-                return Optional.of(mapRental(resultSet));
+                return resultSet.next()
+                        ? Optional.of(mapRental(resultSet))
+                        : Optional.empty();
             }
 
         } catch (SQLException e) {
@@ -189,7 +184,7 @@ public class SQLiteRentalRepository implements RentalRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setLong(1, itemId);
 
@@ -228,16 +223,14 @@ public class SQLiteRentalRepository implements RentalRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setLong(1, itemId);
 
             try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
-
-                return Optional.of(mapRental(resultSet));
+                return resultSet.next()
+                        ? Optional.of(mapRental(resultSet))
+                        : Optional.empty();
             }
 
         } catch (SQLException e) {
@@ -273,7 +266,7 @@ public class SQLiteRentalRepository implements RentalRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setLong(1, ownerId);
 
@@ -323,8 +316,8 @@ public class SQLiteRentalRepository implements RentalRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement statement =
-                     connection.prepareStatement(sql)) {
+                PreparedStatement statement =
+                        connection.prepareStatement(sql)) {
 
             statement.setString(1, status.dbValue());
 
