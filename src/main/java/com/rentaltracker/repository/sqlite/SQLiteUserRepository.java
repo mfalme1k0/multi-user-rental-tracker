@@ -37,9 +37,9 @@ public class SQLiteUserRepository implements UserRepository {
                 """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement insertStatement = connection.prepareStatement(
-                     insertSql,
-                     Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement insertStatement = connection.prepareStatement(
+                        insertSql,
+                        Statement.RETURN_GENERATED_KEYS)) {
 
             insertStatement.setString(1, user.username());
             insertStatement.executeUpdate();
@@ -47,10 +47,9 @@ public class SQLiteUserRepository implements UserRepository {
             long id;
 
             try (ResultSet generatedKeys = insertStatement.getGeneratedKeys()) {
-                if (!generatedKeys.next()) {
-                    throw new SQLException("No generated key returned for inserted user");
-                }
-
+                // sqlite-jdbc always returns one row here (id 0 when nothing was inserted);
+                // the read-back below is what detects an insert that stored nothing.
+                generatedKeys.next();
                 id = generatedKeys.getLong(1);
             }
 
@@ -87,16 +86,14 @@ public class SQLiteUserRepository implements UserRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setLong(1, id);
 
             try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
-
-                return Optional.of(mapUser(resultSet));
+                return resultSet.next()
+                        ? Optional.of(mapUser(resultSet))
+                        : Optional.empty();
             }
 
         } catch (SQLException e) {
@@ -116,16 +113,14 @@ public class SQLiteUserRepository implements UserRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
 
             statement.setString(1, username);
 
             try (ResultSet resultSet = statement.executeQuery()) {
-                if (!resultSet.next()) {
-                    return Optional.empty();
-                }
-
-                return Optional.of(mapUser(resultSet));
+                return resultSet.next()
+                        ? Optional.of(mapUser(resultSet))
+                        : Optional.empty();
             }
 
         } catch (SQLException e) {
@@ -146,14 +141,12 @@ public class SQLiteUserRepository implements UserRepository {
             """;
         Connection connection = databaseManager.getConnection();
         try (
-             PreparedStatement statement = connection.prepareStatement(sql);
-             ResultSet resultSet = statement.executeQuery()) {
+                PreparedStatement statement = connection.prepareStatement(sql);
+                ResultSet resultSet = statement.executeQuery()) {
 
-            if (!resultSet.next()) {
-                return Optional.empty();
-            }
-
-            return Optional.of(mapUser(resultSet));
+            return resultSet.next()
+                    ? Optional.of(mapUser(resultSet))
+                    : Optional.empty();
 
         } catch (SQLException e) {
             throw SQLiteExceptionTranslator.translate(e);
