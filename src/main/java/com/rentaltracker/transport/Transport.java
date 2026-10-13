@@ -29,8 +29,8 @@ public class Transport {
         this.input = new Scanner(System.in);
     }
 
-//    Starts the application by determining whether this is the first launch
-//    If not, then starts the main menu for the owner already existing in DB.
+    //    Starts the application by determining whether this is the first launch
+    //    If not, then starts the main menu for the owner already existing in DB.
     public void start() {
         Optional<User> owner = userService.findOwner();
 
@@ -45,7 +45,7 @@ public class Transport {
         runMenu(currentOwner);
     }
 
-//   Handles the first launch by asking for the owner's username, then registering them.
+    //   Handles the first launch by asking for the owner's username, then registering them.
     public User firstLaunch() {
         System.out.print("Enter your username: ");
         String username = input.nextLine().trim().toLowerCase();
@@ -57,13 +57,13 @@ public class Transport {
         return owner;
     }
 
-//  Handles subsequent launches where user was already registered
+    //  Handles subsequent launches where user was already registered
     private User subsequentRuns(User user) {
         System.out.println("Welcome back, " + user.username() + "!");
         return user;
     }
 
-//    Displays the application's main menu options.
+    //    Displays the application's main menu options.
     private void printMenu() {
         System.out.println();
         System.out.println("=== Rental tracker ===");
@@ -75,7 +75,7 @@ public class Transport {
         System.out.print("> ");
     }
 
-//    Keeps the application running and routes each menu choice to the corresponding method operation.
+    //    Keeps the application running and routes each menu choice to the corresponding method operation.
     private void runMenu(User owner) {
         boolean running = true;
 
@@ -99,7 +99,7 @@ public class Transport {
         }
     }
 
-//    Collects item details from the owner and asks the service layer to create the listing.
+    //    Collects item details from the owner and asks the service layer to create the listing.
     private void listItem(User owner) {
         System.out.println();
         System.out.println("=== List an item ===");
@@ -137,7 +137,7 @@ public class Transport {
         }
     }
 
-//    Displays the owner's inventory with pagination and allows the owner to open an individual item's details.
+    //    Displays the owner's inventory with pagination and allows the owner to open an individual item's details.
     private void viewInventory(User owner) {
         List<Item> items = itemService.getInventory(owner.id());
 
@@ -187,20 +187,7 @@ public class Transport {
 
                 showItemDetails(item, owner);
 
-                // Refresh the inventory in case the item's status changed.
                 items = itemService.getInventory(owner.id());
-
-                if (items.isEmpty()) {
-                    printEmptyInventory();
-                    return;
-                }
-
-                if (page * PAGE_SIZE >= items.size()) {
-                    page = Math.max(
-                            0,
-                            (items.size() - 1) / PAGE_SIZE
-                    );
-                }
 
                 continue;
             }
@@ -209,14 +196,14 @@ public class Transport {
         }
     }
 
-//    Displays the inventory's empty state when the owner has no items.
+    //    Displays the inventory's empty state when the owner has no items.
     private void printEmptyInventory() {
         System.out.println();
         System.out.println("=== My inventory ===");
         System.out.println("No items found.");
     }
 
-//    Displays one page of inventory items with their current status.
+    //    Displays one page of inventory items with their current status.
     private void printInventoryPage(
             List<Item> items,
             int start,
@@ -239,7 +226,7 @@ public class Transport {
         }
     }
 
-//    Displays an item's details and lets the owner delist or relist it.
+    //    Displays an item's details and lets the owner delist or relist it.
     private void showItemDetails(Item item, User owner) {
         while (true) {
             printItemDetails(item, owner);
@@ -270,7 +257,7 @@ public class Transport {
         }
     }
 
-//    Prints the detailed information for a single inventory item.
+    //    Prints the detailed information for a single inventory item.
     private void printItemDetails(Item item, User owner) {
         System.out.println();
         System.out.println("=== " + item.name() + " ===");
@@ -281,29 +268,29 @@ public class Transport {
         System.out.println("listing date   " + item.createdAt());
     }
 
-//    Requests the appropriate status change from the service layer and returns the updated item for display.
+    //    Requests the appropriate status change from the service layer and returns the updated item for display.
     private Item changeItemStatus(Item item) {
         try {
-            switch (item.status()) {
-                case AVAILABLE, RENTED -> {
-                    Item delistedItem = itemService.delist(item.id());
-                    System.out.println("Item delisted.");
-                    return delistedItem;
-                }
-                case UNLISTED -> {
-                    Item relistedItem = itemService.relist(item.id());
-                    System.out.println("Item relisted.");
-                    return relistedItem;
-                }
+            if (item.status() == ItemStatus.AVAILABLE || item.status() == ItemStatus.RENTED) {
+                Item delistedItem = itemService.delist(item.id());
+
+                System.out.println("Item delisted.");
+                return delistedItem;
             }
+
+            // ItemStatus has no other value than UNLISTED left at this point.
+            Item relistedItem = itemService.relist(item.id());
+
+            System.out.println("Item relisted.");
+            return relistedItem;
+
         } catch (BusinessRuleException e) {
             System.out.println(e.getMessage());
+            return item;
         }
-
-        return item;
     }
 
-//    Displays the owner's available items with pagination and lets them select an item to start a rental.
+    //    Displays the owner's available items with pagination and lets them select an item to start a rental.
     private void recordRental(User owner) {
         List<Item> items = itemService.getAvailableItems(owner.id());
 
@@ -360,7 +347,7 @@ public class Transport {
         }
     }
 
-//   Displays one page of items that are currently available for rental.
+    //   Displays one page of items that are currently available for rental.
     private void printRentalItemPage(
             List<Item> items,
             int start,
@@ -381,7 +368,7 @@ public class Transport {
         }
     }
 
-//    Collects renter's name and rental duration details, then asks the rental service to create the rental.
+    //    Collects renter's name and rental duration details, then asks the rental service to create the rental.
     private void createRental(Item item) {
         System.out.print("Renter username: ");
         String renterUsername = input.nextLine().trim();
@@ -415,7 +402,7 @@ public class Transport {
         }
     }
 
-//   Displays the owner's active rentals with pagination and lets them select a rental to view and confirm its return.
+    //   Displays the owner's active rentals with pagination and lets them select a rental to view and confirm its return.
     private void confirmReturn(User owner) {
 
         List<RentalDetails> rentals = rentalService.getActiveRentals(owner.id());
@@ -485,7 +472,7 @@ public class Transport {
         }
     }
 
-//    Displays one page of active rentals with the item and renter names.
+    //    Displays one page of active rentals with the item and renter names.
     private void printRentalReturnPage(
             List<RentalDetails> rentals,
             int start,
@@ -506,7 +493,7 @@ public class Transport {
         }
     }
 
-//    Displays an active rental's details and allows the owner to confirm the return or go back to the rental list.
+    //    Displays an active rental's details and allows the owner to confirm the return or go back to the rental list.
     private void showRentalDetails(RentalDetails rentalDetails) {
         Rental rental = rentalDetails.rental();
 
@@ -515,9 +502,8 @@ public class Transport {
 
             System.out.println();
 
-            if (rental.status() == RentalStatus.ACTIVE) {
-                System.out.println("1) Confirm return");
-            }
+            // The list this screen is opened from only holds ACTIVE rentals.
+            System.out.println("1) Confirm return");
 
             System.out.println("2) Back to list");
             System.out.print("> ");
@@ -528,7 +514,7 @@ public class Transport {
                 return;
             }
 
-            if (choice.equals("1") && rental.status() == RentalStatus.ACTIVE) {
+            if (choice.equals("1")) {
 
                 try {
                     rentalService.confirmReturn(rental.id());
@@ -546,7 +532,7 @@ public class Transport {
         }
     }
 
-//    Prints the details of a rental selected from the active rental list.
+    //    Prints the details of a rental selected from the active rental list.
     private void printRentalDetails(RentalDetails rentalDetails) {
 
         Rental rental = rentalDetails.rental();
@@ -560,7 +546,7 @@ public class Transport {
         System.out.println("status         " + rental.status().name().toLowerCase());
     }
 
-//    Displays pagination options and reads the user's selection.
+    //    Displays pagination options and reads the user's selection.
     private String readPaginationChoice(int page,
                                         int end,
                                         int totalItems) {
@@ -572,7 +558,7 @@ public class Transport {
                 .toUpperCase();
     }
 
-//    Displays only the pagination controls that are valid for the current page.
+    //    Displays only the pagination controls that are valid for the current page.
     private void printPaginationOptions(
             int page,
             int end,
@@ -592,7 +578,7 @@ public class Transport {
         System.out.print("> ");
     }
 
-//    Converts a user's numeric menu selection into an Integer, returning null when the input is not a valid number.
+    //    Converts a user's numeric menu selection into an Integer, returning null when the input is not a valid number.
     private Integer parseSelection(String choice) {
         try {
             return Integer.parseInt(choice);
