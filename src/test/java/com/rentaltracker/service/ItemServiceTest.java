@@ -69,6 +69,12 @@ class ItemServiceTest {
     }
 
     @Test
+    void listItemRejectsMissingCost() {
+        assertThrows(ValidationException.class,
+                () -> service.listItem(ownerId, "Ladder", "d", null));
+    }
+
+    @Test
     void getAvailableItemsExcludesRentedAndUnlisted() {
         service.listItem(ownerId, "Ladder", "d", BigDecimal.ONE);
         Item drill = service.listItem(ownerId, "Drill", "d", BigDecimal.ONE);
