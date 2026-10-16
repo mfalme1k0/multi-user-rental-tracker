@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Scanner;
 
+
 public class Transport {
 
     private static final int PAGE_SIZE = 5;
@@ -28,22 +29,53 @@ public class Transport {
         this.rentalService = rentalService;
         this.input = new Scanner(System.in);
     }
-
-    //    Starts the application by determining whether this is the first launch
-    //    If not, then starts the main menu for the owner already existing in DB.
+     //asks if the user is registered or if its their first time
+    //then proceeds to login or register
     public void start() {
-        Optional<User> owner = userService.findOwner();
+        System.out.println("Do you have an account?");
+        System.out.println("1: Login");
+        System.out.println("2: Register");
 
-        User currentOwner;
-
-        if (owner.isPresent()) {
-            currentOwner = subsequentRuns(owner.get());
-        } else {
-            currentOwner = firstLaunch();
+        String option = input.nextLine().trim();
+        switch (option){
+            case "1" -> Login();
+            case "2" -> Register();
         }
 
-        runMenu(currentOwner);
+
+
+//        Optional<User> owner = userService.findOwner();
+//
+//        User currentOwner;
+//
+//        if (owner.isPresent()) {
+//            currentOwner = subsequentRuns(owner.get());
+//        } else {
+//            currentOwner = firstLaunch();
+//        }
+//
+//        runMenu(currentOwner);
     }
+    public void Login(){
+        String username = getUsername();
+        String password = getPassword();
+        System.out.println("feature under construction!!");
+    }
+    public void Register(){
+        String username = getUsername();
+        String password = getPassword();
+        System.out.println("feature under construction!!");
+    }
+    //helper for getting input before logging in or signing up -both take a username and password
+ private String getUsername(){
+     System.out.println("Enter username:");
+     return input.nextLine().toLowerCase().trim();
+ }
+
+ private String getPassword(){
+     System.out.println("Enter password");
+     return input.nextLine().trim();
+ }
 
     //   Handles the first launch by asking for the owner's username, then registering them.
     public User firstLaunch() {
@@ -69,9 +101,10 @@ public class Transport {
         System.out.println("=== Rental tracker ===");
         System.out.println("1) List an item");
         System.out.println("2) View my inventory");
-        System.out.println("3) Record a rental");
+        System.out.println("3) Browse listings");
         System.out.println("4) Confirm a return");
         System.out.println("5) Exit");
+        System.out.println("======================");
         System.out.print("> ");
     }
 
