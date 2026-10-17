@@ -229,8 +229,12 @@ The database schema remains in `schema.sql` and is initialised through `Database
 - The users table stores a password hash, never a plaintext password.
 - Item ownership is represented by `listed_items.owner_id`.
 - Rentals reference their item and renter through foreign keys.
-
-The Service layer remains responsible for business authorisation and readable error handling. Database constraints are the final integrity boundary, not a replacement for service checks.
+- `DatabaseManager` uses a per-call connection and a `ThreadLocal` transaction connection. This is sufficient for the
+  current single-threaded CLI, which serves users sequentially rather than concurrently. If the application becomes
+  a concurrent server, transaction context must be redesigned and re-reviewed before that deployment model is used.
+- Repository implementations enforce persistence integrity and report zero-row updates as `NotFoundException`; the
+  Service layer remains the authority for authenticated ownership and authorization checks.
+  The Service layer remains responsible for business authorisation and readable error handling. Database constraints are the final integrity boundary, not a replacement for service checks.
 
 Any new or modified schema constraints must be documented in `docs/database-design.md` and reflected in the ER diagram.
 
