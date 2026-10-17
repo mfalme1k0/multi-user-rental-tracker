@@ -73,12 +73,12 @@ When running locally, the database defaults to `rental-tracker.db` in the workin
 
 Docker builds and runs the application in a consistent environment without requiring Java or Maven on your computer.
 
-#### First run or when rebuilding
+#### Rebuild and start with Docker Compose
 
 From the project root, run:
 
 ```bash
-docker compose run --build --rm app
+docker compose up --build
 ```
 
 Use this command when the image has not been built yet or when you need to rebuild it to include application or build-configuration changes.
@@ -90,7 +90,7 @@ Docker downloads missing base images and dependencies, builds the application, a
 After a successful build, run:
 
 ```bash
-docker compose run --rm app
+docker compose up
 ```
 
 **Use this command for everyday use when the image already exists.** It does not explicitly request a rebuild, avoiding unnecessary build work and repeated dependency downloads.
@@ -101,9 +101,8 @@ If the required image is missing locally, Docker Compose may need to build or ob
 
 | Situation | Command |
 |---|---|
-| First run | `docker compose run --build --rm app` |
-| Run the existing application | `docker compose run --rm app` |
-| Include source or build-configuration changes | `docker compose run --build --rm app` |
+| First run | `docker compose up --build` |
+| Include source or build-configuration changes | `docker compose up --build` |
 
 Docker reuses valid cached build layers where possible. Changes to `pom.xml` can invalidate the Maven dependency layer and require additional downloads. An interrupted build may also need to repeat an incomplete step.
 
