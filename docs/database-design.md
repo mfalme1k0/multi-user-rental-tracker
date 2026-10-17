@@ -92,12 +92,12 @@ The `users` table stores application accounts and the credentials required for a
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
-    created_at TEXT NOT NULL
-        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+                                     id INTEGER PRIMARY KEY,
+                                     username TEXT NOT NULL UNIQUE,
+                                     password TEXT NOT NULL,
+                                     created_at TEXT NOT NULL
+                                     DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
 ```
 
 ### Constraints
@@ -154,33 +154,33 @@ The `listed_items` table stores items that users have listed for rental.
 
 ```sql
 CREATE TABLE IF NOT EXISTS listed_items (
-    id INTEGER PRIMARY KEY,
-    owner_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    cost_per_day TEXT NOT NULL CHECK (
-        cost_per_day NOT GLOB '*[^0-9.]*'
-        AND length(cost_per_day) > 0
-        AND length(cost_per_day)
-            - length(replace(cost_per_day, '.', '')) <= 1
-        AND substr(cost_per_day, 1, 1) GLOB '[0-9]'
-        AND substr(cost_per_day, -1, 1) GLOB '[0-9]'
-        AND replace(
-            replace(cost_per_day, '0', ''),
-            '.',
-            ''
-        ) <> ''
+                                            id INTEGER PRIMARY KEY,
+                                            owner_id INTEGER NOT NULL,
+                                            name TEXT NOT NULL,
+                                            description TEXT,
+                                            cost_per_day TEXT NOT NULL CHECK (
+                                            cost_per_day NOT GLOB '*[^0-9.]*'
+                                            AND length(cost_per_day) > 0
+    AND length(cost_per_day)
+    - length(replace(cost_per_day, '.', '')) <= 1
+    AND substr(cost_per_day, 1, 1) GLOB '[0-9]'
+    AND substr(cost_per_day, -1, 1) GLOB '[0-9]'
+    AND replace(
+                   replace(cost_per_day, '0', ''),
+    '.',
+    ''
+    ) <> ''
     ),
     status TEXT NOT NULL CHECK (
-        status IN ('available', 'rented', 'unlisted')
+                                   status IN ('available', 'rented', 'unlisted')
     ),
     created_at TEXT NOT NULL
-        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
 
     FOREIGN KEY (owner_id)
-        REFERENCES users(id)
-        ON DELETE RESTRICT
-);
+    REFERENCES users(id)
+    ON DELETE RESTRICT
+    );
 ```
 
 ### `owner_id`
@@ -269,25 +269,25 @@ When an item is rented again after a previous rental has been closed, a new rent
 
 ```sql
 CREATE TABLE IF NOT EXISTS rentals (
-    id INTEGER PRIMARY KEY,
-    item_id INTEGER NOT NULL,
-    renter_id INTEGER NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT NOT NULL,
-    returned_at TEXT,
-    status TEXT NOT NULL CHECK (
-        status IN ('active', 'closed')
+                                       id INTEGER PRIMARY KEY,
+                                       item_id INTEGER NOT NULL,
+                                       renter_id INTEGER NOT NULL,
+                                       start_time TEXT NOT NULL,
+                                       end_time TEXT NOT NULL,
+                                       returned_at TEXT,
+                                       status TEXT NOT NULL CHECK (
+                                       status IN ('active', 'closed')
     ),
     CHECK (end_time > start_time),
 
     FOREIGN KEY (item_id)
-        REFERENCES listed_items(id)
-        ON DELETE RESTRICT,
+    REFERENCES listed_items(id)
+    ON DELETE RESTRICT,
 
     FOREIGN KEY (renter_id)
-        REFERENCES users(id)
-        ON DELETE RESTRICT
-);
+    REFERENCES users(id)
+    ON DELETE RESTRICT
+    );
 ```
 
 ### `item_id`
@@ -599,6 +599,22 @@ DatabaseManager.class.getResourceAsStream("/schema.sql")
 The SQL is read as UTF-8 and executed against the SQLite connection.
 
 `DatabaseManager` creates the connection required for initialization and closes it when initialization completes.
+
+### Migration policy for the multi-user schema
+
+`DatabaseManager` performs a versioned migration from the single-user users table. When an existing database has no
+`password` column, the users table is rebuilt with the multi-user shape while preserving user IDs, usernames,
+timestamps, and all rows that reference those IDs. Legacy rows receive an empty, unusable password hash rather than
+an invented credential; the authentication flow must require those accounts to be registered or reset before login.
+
+This migration is deliberately explicit because SQLite's `CREATE TABLE IF NOT EXISTS` does not alter an existing
+table. A fresh database receives `password TEXT NOT NULL` directly from `schema.sql`, while an existing database is
+upgraded to schema version 2. The rebuild temporarily disables foreign-key enforcement, runs inside a transaction,
+checks for dangling references, restores the connection settings, and fails rather than risking silent data loss.
+
+The alternative was to document a fresh-schema-only reset. That would be simpler, but it would discard existing rental
+history and make a persistent Docker volume unsafe to upgrade. The migration is therefore the safer choice even though
+it adds implementation and test complexity.
 
 Foreign-key enforcement is explicitly enabled on every connection:
 
