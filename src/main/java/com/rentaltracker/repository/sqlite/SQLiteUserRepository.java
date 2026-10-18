@@ -26,12 +26,12 @@ public class SQLiteUserRepository implements UserRepository {
     @Override
     public User insert(User user) {
         String insertSql = """
-                INSERT INTO users (username)
-                VALUES (?)
+                INSERT INTO users (username, password)
+                VALUES (?, ?)
                 """;
 
         String selectSql = """
-                SELECT id, username, created_at
+                SELECT id, username, password, created_at
                 FROM users
                 WHERE id = ?
                 """;
@@ -42,6 +42,7 @@ public class SQLiteUserRepository implements UserRepository {
                         Statement.RETURN_GENERATED_KEYS)) {
 
             insertStatement.setString(1, user.username());
+            insertStatement.setString(2, user.password());
             insertStatement.executeUpdate();
 
             long id;
@@ -80,7 +81,7 @@ public class SQLiteUserRepository implements UserRepository {
     @Override
     public Optional<User> findById(long id) {
         String sql = """
-            SELECT id, username, created_at
+            SELECT id, username, password, created_at
             FROM users
             WHERE id = ?
             """;
@@ -107,7 +108,7 @@ public class SQLiteUserRepository implements UserRepository {
     @Override
     public Optional<User> findByUsername(String username) {
         String sql = """
-            SELECT id, username, created_at
+            SELECT id, username, password, created_at
             FROM users
             WHERE username = ?
             """;
@@ -134,7 +135,7 @@ public class SQLiteUserRepository implements UserRepository {
     @Override
     public Optional<User> findFirst() {
         String sql = """
-            SELECT id, username, created_at
+            SELECT id, username, password, created_at
             FROM users
             ORDER BY id ASC
             LIMIT 1
@@ -168,6 +169,7 @@ public class SQLiteUserRepository implements UserRepository {
         try {
             long id = resultSet.getLong("id");
             String username = resultSet.getString("username");
+            String password = resultSet.getString("password");
             String createdAtValue = resultSet.getString("created_at");
 
             LocalDateTime createdAt =
@@ -176,7 +178,7 @@ public class SQLiteUserRepository implements UserRepository {
             return new User(
                     id,
                     username,
-                    null,
+                    password,
                     createdAt
             );
 
@@ -188,4 +190,3 @@ public class SQLiteUserRepository implements UserRepository {
         }
     }
 }
-

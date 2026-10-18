@@ -15,7 +15,7 @@ import java.sql.Statement;
 
 public final class DatabaseManager {
 
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     private final Path databasePath;
     private final ConnectionFactory connectionFactory;
@@ -214,7 +214,7 @@ public final class DatabaseManager {
 
     private void upgrade(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
-            if (usersTableIsCaseSensitive(statement)) {
+            if (usersTableIsCaseSensitive(statement) || !usersTableHasPassword(statement)) {
                 rebuildUsersTable(connection, statement);
             } else {
                 statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
@@ -235,6 +235,17 @@ public final class DatabaseManager {
     static boolean isCaseSensitive(String tableDefinition) {
         return tableDefinition == null
                 || !tableDefinition.toUpperCase().contains("COLLATE NOCASE");
+    }
+
+    static boolean usersTableHasPassword(Statement statement) throws SQLException {
+        try (ResultSet resultSet = statement.executeQuery("PRAGMA table_info(users)")) {
+            while (resultSet.next()) {
+                if ("password".equalsIgnoreCase(resultSet.getString("name"))) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
     private void rebuildUsersTable(Connection connection, Statement statement) throws SQLException {
@@ -265,16 +276,18 @@ public final class DatabaseManager {
                     CREATE TABLE users_new (
                         id INTEGER PRIMARY KEY,
                         username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                        password TEXT NOT NULL DEFAULT '',
                         created_at TEXT NOT NULL DEFAULT (
                             strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                         )
                     )
                     """);
 
-            statement.execute("""
-                    INSERT INTO users_new (id, username, created_at)
-                    SELECT id, username, created_at FROM users
-                    """);
+            String passwordExpression = usersTableHasPassword(statement)
+                    ? "password"
+                    : "''";
+            statement.execute("INSERT INTO users_new (id, username, password, created_at) "
+                    + "SELECT id, username, " + passwordExpression + ", created_at FROM users");
 
             statement.execute("DROP TABLE users");
             statement.execute("ALTER TABLE users_new RENAME TO users");
