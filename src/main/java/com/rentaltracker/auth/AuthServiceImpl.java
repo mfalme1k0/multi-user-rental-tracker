@@ -19,7 +19,7 @@ public class AuthServiceImpl implements AuthService {
             PasswordHasher passwordHasher, AuthValidator authValidator) {
         this.userRepository = Objects.requireNonNull(userRepository);
         this.passwordHasher = Objects.requireNonNull(passwordHasher);
-        this.authValidator = authValidator;
+        this.authValidator = Objects.requireNonNull(authValidator);
     }
 
     @Override

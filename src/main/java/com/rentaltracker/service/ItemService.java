@@ -58,10 +58,22 @@ public class ItemService {
         return new ItemDetails(item, ownerUsername);
     }
 
+    // Available listings belonging to other users.
+//    public List<Item> getMarketplaceListings(long actingUserId) {
+//        return itemRepository.findAvailableExcludingOwner(actingUserId);
+//    }
+
     // AVAILABLE or RENTED -> UNLISTED.
     // An item delisted while rented stays "out"; its active rental is untouched
-    public Item delist(long itemId) {
+    // Only the item's owner may delist it.
+    public Item delist(long itemId, long actingUserId) {
         Item item = itemRepository.getById(itemId);
+
+        if (item.ownerId() != actingUserId) {
+            throw new BusinessRuleException(
+                    "You can only delist your own items");
+        }
+
         Item unlisted = item.transitionTo(ItemStatus.UNLISTED);
         itemRepository.updateStatus(itemId, unlisted.status());
 

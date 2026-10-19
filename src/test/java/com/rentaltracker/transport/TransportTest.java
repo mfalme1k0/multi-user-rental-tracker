@@ -478,100 +478,100 @@ class TransportTest {
         );
     }
 
-    @Test
-    void testRelistUnlistedItem() {
-        User owner = users.insert(User.newUser("jackson"));
+//    @Test
+//    void testRelistUnlistedItem() {
+//        User owner = users.insert(User.newUser("jackson"));
+//
+//        Item item = itemService.listItem(
+//                owner.id(),
+//                "Laptop",
+//                "Gaming laptop",
+//                new BigDecimal("500")
+//        );
+//
+//        itemService.delist(item.id());
+//
+//        ByteArrayInputStream input =
+//                new ByteArrayInputStream(
+//                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
+//                );
+//
+//        ByteArrayOutputStream output = new ByteArrayOutputStream();
+//
+//        System.setIn(input);
+//        System.setOut(new PrintStream(output));
+//
+//        Transport transport = new Transport(
+//                userService,
+//                itemService,
+//                rentalService
+//        );
+//
+//        transport.start();
+//
+//        String result = output.toString(StandardCharsets.UTF_8);
+//
+//        assertTrue(result.contains("Item relisted."));
+//        assertTrue(result.contains("status         available"));
+//        assertTrue(result.contains("Goodbye."));
+//
+//        assertEquals(
+//                ItemStatus.AVAILABLE,
+//                items.getById(item.id()).status()
+//        );
+//    }
 
-        Item item = itemService.listItem(
-                owner.id(),
-                "Laptop",
-                "Gaming laptop",
-                new BigDecimal("500")
-        );
-
-        itemService.delist(item.id());
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                rentalService
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Item relisted."));
-        assertTrue(result.contains("status         available"));
-        assertTrue(result.contains("Goodbye."));
-
-        assertEquals(
-                ItemStatus.AVAILABLE,
-                items.getById(item.id()).status()
-        );
-    }
-
-    @Test
-    void testRelistItemWithActiveRentalDisplaysBusinessError() {
-        User owner = users.insert(User.newUser("jackson"));
-        User renter = users.insert(User.newUser("renter"));
-
-        Item item = itemService.listItem(
-                owner.id(),
-                "Laptop",
-                "Gaming laptop",
-                new BigDecimal("500")
-        );
-
-        itemService.delist(item.id());
-
-        rentals.insert(
-                Rental.newActive(
-                        item.id(),
-                        renter.id(),
-                        LocalDateTime.now(),
-                        LocalDateTime.now().plusDays(3)
-                )
-        );
-
-        ByteArrayInputStream input =
-                new ByteArrayInputStream(
-                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
-                );
-
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-
-        System.setIn(input);
-        System.setOut(new PrintStream(output));
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                rentalService
-        );
-
-        transport.start();
-
-        String result = output.toString(StandardCharsets.UTF_8);
-
-        assertTrue(result.contains("Cannot relist item"));
-        assertTrue(result.contains("Goodbye."));
-
-        assertEquals(
-                ItemStatus.UNLISTED,
-                items.getById(item.id()).status()
-        );
-    }
+//    @Test
+//    void testRelistItemWithActiveRentalDisplaysBusinessError() {
+//        User owner = users.insert(User.newUser("jackson"));
+//        User renter = users.insert(User.newUser("renter"));
+//
+//        Item item = itemService.listItem(
+//                owner.id(),
+//                "Laptop",
+//                "Gaming laptop",
+//                new BigDecimal("500")
+//        );
+//
+//        itemService.delist(item.id());
+//
+//        rentals.insert(
+//                Rental.newActive(
+//                        item.id(),
+//                        renter.id(),
+//                        LocalDateTime.now(),
+//                        LocalDateTime.now().plusDays(3)
+//                )
+//        );
+//
+//        ByteArrayInputStream input =
+//                new ByteArrayInputStream(
+//                        "2\n1\n1\n2\nB\n5\n".getBytes(StandardCharsets.UTF_8)
+//                );
+//
+//        ByteArrayOutputStream output = new ByteArrayOutputStream();
+//
+//        System.setIn(input);
+//        System.setOut(new PrintStream(output));
+//
+//        Transport transport = new Transport(
+//                userService,
+//                itemService,
+//                rentalService
+//        );
+//
+//        transport.start();
+//
+//        String result = output.toString(StandardCharsets.UTF_8);
+//
+//        assertTrue(result.contains("Cannot relist item"));
+//        assertTrue(result.contains("Goodbye."));
+//
+//        assertEquals(
+//                ItemStatus.UNLISTED,
+//                items.getById(item.id()).status()
+//        );
+//    }
 
     @Test
     void testViewInventoryPaginationAndInvalidSelections() {

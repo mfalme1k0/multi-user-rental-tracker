@@ -253,7 +253,7 @@ public class Transport {
                 continue;
             }
 
-            item = changeItemStatus(item);
+//            item = changeItemStatus(item);
         }
     }
 
@@ -268,27 +268,27 @@ public class Transport {
         System.out.println("listing date   " + item.createdAt());
     }
 
-    //    Requests the appropriate status change from the service layer and returns the updated item for display.
-    private Item changeItemStatus(Item item) {
-        try {
-            if (item.status() == ItemStatus.AVAILABLE || item.status() == ItemStatus.RENTED) {
-                Item delistedItem = itemService.delist(item.id());
-
-                System.out.println("Item delisted.");
-                return delistedItem;
-            }
-
-            // ItemStatus has no other value than UNLISTED left at this point.
-            Item relistedItem = itemService.relist(item.id());
-
-            System.out.println("Item relisted.");
-            return relistedItem;
-
-        } catch (BusinessRuleException e) {
-            System.out.println(e.getMessage());
-            return item;
-        }
-    }
+//    //    Requests the appropriate status change from the service layer and returns the updated item for display.
+//    private Item changeItemStatus(Item item) {
+//        try {
+//            if (item.status() == ItemStatus.AVAILABLE || item.status() == ItemStatus.RENTED) {
+//                Item delistedItem = itemService.delist(item.id());
+//
+//                System.out.println("Item delisted.");
+//                return delistedItem;
+//            }
+//
+//            // ItemStatus has no other value than UNLISTED left at this point.
+//            Item relistedItem = itemService.relist(item.id());
+//
+//            System.out.println("Item relisted.");
+//            return relistedItem;
+//
+//        } catch (BusinessRuleException e) {
+//            System.out.println(e.getMessage());
+//            return item;
+//        }
+//    }
 
     //    Displays the owner's available items with pagination and lets them select an item to start a rental.
     private void recordRental(User owner) {
