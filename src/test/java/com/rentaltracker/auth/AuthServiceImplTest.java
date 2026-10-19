@@ -31,11 +31,11 @@ class AuthServiceImplTest {
 
     private AuthServiceImpl authService;
 
-    @BeforeEach
-    void setUp() {
-        authService = new AuthServiceImpl(
-                userRepository, passwordHasher, authValidator);
-    }
+//    @BeforeEach
+//    void setUp() {
+//        authService = new AuthServiceImpl(
+//                userRepository, passwordHasher, authValidator);
+//    }
 
     @Test
     void testRegisterCreatesUserWithHashedPassword() {

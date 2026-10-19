@@ -42,20 +42,29 @@ public class ItemService {
         String cleanName = itemValidator.validateName(name);
         BigDecimal validCost = itemValidator.validateCostPerDay(costPerDay);
 
-        User owner = userService.getUserById(ownerId);
+        return transactor.inTransaction(() -> {
+            // Verify that the owner exists before creating the listing.
+            User owner = userService.getUserById(ownerId);
 
-        return itemRepository.insert(
-                Item.newListing(owner.id(), cleanName, description, validCost));
+            return itemRepository.insert(
+                    Item.newListing(owner.id(), cleanName, description, validCost));
+        });
     }
 
     // Returns all items owned by the current user, including rented and unlisted items.
     public List<Item> getInventory(long ownerId) {
+        // Verify that the owner exists before querying their listings.
+        userService.getUserById(ownerId);
+
         return itemRepository.findByOwnerId(ownerId);
     }
 
     // Returns only AVAILABLE items owned by the current user.
     // Rented and unlisted items are excluded because they cannot currently be rented.
     public List<Item> getAvailableItems(long ownerId) {
+        // Verify that the owner exists before querying their listings.
+        userService.getUserById(ownerId);
+
         return itemRepository.findByOwnerIdAndStatus(ownerId, ItemStatus.AVAILABLE);
     }
 
@@ -79,16 +88,21 @@ public class ItemService {
     // An active rental is not canceled if the item is delisted while rented.
     // Only the item's owner may delist it.
     public Item delist(long itemId, long requestingUserId) {
-        Item item = itemRepository.getById(itemId);
+        return transactor.inTransaction(() -> {
+            // Verify that the requesting user exists before checking ownership.
+            userService.getUserById(requestingUserId);
 
-        if (item.ownerId() != requestingUserId) {
-            throw new BusinessRuleException("You can only delist your own items");
-        }
+            Item item = itemRepository.getById(itemId);
 
-        Item unlisted = item.transitionTo(ItemStatus.UNLISTED);
-        itemRepository.updateStatus(itemId, unlisted.status());
+            if (item.ownerId() != requestingUserId) {
+                throw new BusinessRuleException("You can only delist your own items");
+            }
 
-        return unlisted;
+            Item unlisted = item.transitionTo(ItemStatus.UNLISTED);
+            itemRepository.updateStatus(itemId, unlisted.status());
+
+            return unlisted;
+        });
     }
 
     // UNLISTED -> AVAILABLE, only when the item has no active rental.
@@ -96,6 +110,9 @@ public class ItemService {
     // The status change is performed within a transaction.
     public Item relist(long itemId, long requestingUserId) {
         return transactor.inTransaction(() -> {
+            // Verify that the requesting user exists before checking ownership.
+            userService.getUserById(requestingUserId);
+
             Item item = itemRepository.getById(itemId);
 
             if (item.ownerId() != requestingUserId) {

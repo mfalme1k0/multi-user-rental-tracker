@@ -10,6 +10,7 @@ import com.rentaltracker.exception.BusinessRuleException;
 import com.rentaltracker.repository.ItemRepository;
 import com.rentaltracker.repository.RentalRepository;
 import com.rentaltracker.repository.Transactor;
+import com.rentaltracker.validation.RentalValidator;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -23,14 +24,16 @@ public class RentalService {
     private final RentalRepository rentalRepository;
     private final UserService userService;
     private final Transactor transactor;
+    private final RentalValidator rentalValidator;
     private final Clock clock;
 
     public RentalService(ItemRepository itemRepository, RentalRepository rentalRepository, UserService userService,
-                         Transactor transactor, Clock clock) {
+                         Transactor transactor, RentalValidator rentalValidator, Clock clock) {
         this.itemRepository = Objects.requireNonNull(itemRepository);
         this.rentalRepository = Objects.requireNonNull(rentalRepository);
         this.userService = Objects.requireNonNull(userService);
         this.transactor = Objects.requireNonNull(transactor);
+        this.rentalValidator = Objects.requireNonNull(rentalValidator);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -38,10 +41,12 @@ public class RentalService {
     // Checks ownership, moves the item from AVAILABLE to RENTED, and inserts
     // the rental with an end time calculated from the start time and duration.
     public Rental recordRental(long itemId, long renterId, int days) {
-        int validDays = Validation.requireAtLeastMinimumDays(days);
+        int validDays = rentalValidator.validateRentalDuration(days);
 
         return transactor.inTransaction(() -> {
             Item item = itemRepository.getById(itemId);
+
+            // Verify that the renter exists before recording the rental.
             User renter = userService.getUserById(renterId);
 
             // A user cannot rent their own item.
@@ -63,6 +68,9 @@ public class RentalService {
 
     // Active rentals across the owner's items, the oldest due date first (the "confirm a return" list).
     public List<RentalDetails> getActiveRentals(long ownerId) {
+        // Verify that the owner exists before querying their active rentals.
+        userService.getUserById(ownerId);
+
         return rentalRepository.findActiveDetailsByOwnerId(ownerId);
     }
 
@@ -72,6 +80,9 @@ public class RentalService {
     // An item delisted while rented remains UNLISTED.
     public Rental confirmReturn(long rentalId, long requestingUserId) {
         return transactor.inTransaction(() -> {
+            // Verify that the requesting user exists before checking ownership.
+            userService.getUserById(requestingUserId);
+
             Rental rental = rentalRepository.getById(rentalId);
             Item item = itemRepository.getById(rental.itemId());
 
