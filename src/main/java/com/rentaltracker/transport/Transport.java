@@ -31,19 +31,19 @@ public class Transport {
 
     //    Starts the application by determining whether this is the first launch
     //    If not, then starts the main menu for the owner already existing in DB.
-    public void start() {
-        Optional<User> owner = userService.findOwner();
-
-        User currentOwner;
-
-        if (owner.isPresent()) {
-            currentOwner = subsequentRuns(owner.get());
-        } else {
+//    public void start() {
+//        Optional<User> owner = userService.findOwner();
+//
+//        User currentOwner;
+//
+//        if (owner.isPresent()) {
+//            currentOwner = subsequentRuns(owner.get());
+//        } else {
 //            currentOwner = firstLaunch();
-        }
-
-//        runMenu(currentOwner);
-    }
+//        }
+//
+//       runMenu(currentOwner);
+//    }
 
     //   Handles the first launch by asking for the owner's username, then registering them.
 //    public User firstLaunch() {
@@ -453,7 +453,7 @@ public class Transport {
 
                 RentalDetails rentalDetails = rentals.get(start + selected - 1);
 
-                showRentalDetails(rentalDetails);
+//                showRentalDetails(rentalDetails);
 
                 // Refresh after a possible return so closed rentals disappear.
                 rentals = rentalService.getActiveRentals(owner.id());
@@ -495,43 +495,43 @@ public class Transport {
     }
 
     //    Displays an active rental's details and allows the owner to confirm the return or go back to the rental list.
-    private void showRentalDetails(RentalDetails rentalDetails) {
-        Rental rental = rentalDetails.rental();
-
-        while (true) {
-            printRentalDetails(rentalDetails);
-
-            System.out.println();
-
-            // The list this screen is opened from only holds ACTIVE rentals.
-            System.out.println("1) Confirm return");
-
-            System.out.println("2) Back to list");
-            System.out.print("> ");
-
-            String choice = input.nextLine().trim();
-
-            if (choice.equals("2") || choice.equalsIgnoreCase("B")) {
-                return;
-            }
-
-            if (choice.equals("1")) {
-
-                try {
-                    rentalService.confirmReturn(rental.id());
-                    System.out.println("Return confirmed successfully.");
-                    return;
-
-                } catch (BusinessRuleException e) {
-                    System.out.println(e.getMessage());
-                }
-
-                continue;
-            }
-
-            System.out.println("Invalid option.");
-        }
-    }
+//    private void showRentalDetails(RentalDetails rentalDetails) {
+//        Rental rental = rentalDetails.rental();
+//
+//        while (true) {
+//            printRentalDetails(rentalDetails);
+//
+//            System.out.println();
+//
+//            // The list this screen is opened from only holds ACTIVE rentals.
+//            System.out.println("1) Confirm return");
+//
+//            System.out.println("2) Back to list");
+//            System.out.print("> ");
+//
+//            String choice = input.nextLine().trim();
+//
+//            if (choice.equals("2") || choice.equalsIgnoreCase("B")) {
+//                return;
+//            }
+//
+//            if (choice.equals("1")) {
+//
+//                try {
+//                    rentalService.confirmReturn(rental.id());
+//                    System.out.println("Return confirmed successfully.");
+//                    return;
+//
+//                } catch (BusinessRuleException e) {
+//                    System.out.println(e.getMessage());
+//                }
+//
+//                continue;
+//            }
+//
+//            System.out.println("Invalid option.");
+//        }
+//    }
 
     //    Prints the details of a rental selected from the active rental list.
     private void printRentalDetails(RentalDetails rentalDetails) {

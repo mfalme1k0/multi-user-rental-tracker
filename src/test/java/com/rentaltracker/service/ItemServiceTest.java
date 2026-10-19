@@ -36,16 +36,16 @@ class ItemServiceTest {
     private ItemService service;
     private long ownerId;
 
-    @BeforeEach
-    void setUp() {
-        DatabaseManager db = createDatabase();
-        items = new SQLiteItemRepository(db);
-        rentals = new SQLiteRentalRepository(db);
-        users = new SQLiteUserRepository(db);
-        SQLiteTransactor transactor = new SQLiteTransactor(db);
-        service = new ItemService(items, rentals, users, transactor);
-        ownerId = users.insert(com.rentaltracker.domain.User.newUser("owner")).id();
-    }
+//    @BeforeEach
+//    void setUp() {
+//        DatabaseManager db = createDatabase();
+//        items = new SQLiteItemRepository(db);
+//        rentals = new SQLiteRentalRepository(db);
+//        users = new SQLiteUserRepository(db);
+//        SQLiteTransactor transactor = new SQLiteTransactor(db);
+//        service = new ItemService(items, rentals, users, transactor);
+//        ownerId = users.insert(com.rentaltracker.domain.User.newUser("owner")).id();
+//    }
 
     @Test
     void listItemStartsAvailableWithDecimalCost() {

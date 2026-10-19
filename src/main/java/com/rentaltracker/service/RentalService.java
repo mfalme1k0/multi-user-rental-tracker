@@ -66,25 +66,36 @@ public class RentalService {
         return rentalRepository.findActiveDetailsByOwnerId(ownerId);
     }
 
-    // Confirms a return: closes the rental with a return timestamp, and puts the item back to AVAILABLE
-    public Rental confirmReturn(long rentalId) {
+    // Confirms the return of an active rental.
+    // Only the item's owner may confirm the return.
+    // A returned item becomes AVAILABLE if it is still RENTED;
+    // An item delisted while rented remains UNLISTED.
+    public Rental confirmReturn(long rentalId, long requestingUserId) {
         return transactor.inTransaction(() -> {
             Rental rental = rentalRepository.getById(rentalId);
+            Item item = itemRepository.getById(rental.itemId());
+
+            if (item.ownerId() != requestingUserId) {
+                throw new BusinessRuleException(
+                        "You can only confirm returns for your own items");
+            }
+
             if (rental.status() != RentalStatus.ACTIVE) {
-                throw new BusinessRuleException("Rental " + rentalId + " is not active, it cannot be returned");
+                throw new BusinessRuleException(
+                        "Rental " + rentalId + " is not active, it cannot be returned");
             }
 
             LocalDateTime returnedAt = LocalDateTime.now(clock);
             Rental closed = rental.closedAt(returnedAt);
+
             rentalRepository.updateStatus(rentalId, closed.status(), returnedAt);
 
-            Item item = itemRepository.getById(rental.itemId());
             if (item.status() == ItemStatus.RENTED) {
                 Item available = item.transitionTo(ItemStatus.AVAILABLE);
                 itemRepository.updateStatus(item.id(), available.status());
             }
 
-            // else: item is UNLISTED (delisted while out) - leave it as the owner set it.
+            // An UNLISTED item stays UNLISTED after its active rental is returned.
             return closed;
         });
     }
