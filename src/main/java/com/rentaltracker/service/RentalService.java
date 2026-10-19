@@ -34,20 +34,20 @@ public class RentalService {
         this.clock = Objects.requireNonNull(clock);
     }
 
-    // Records a rental: resolves or creates the renter, checks the renter is not the owner, moves the item
-    // AVAILABLE -> RENTED, and inserts the rental with end = start + days.
-    public Rental recordRental(long itemId, String renterName, int days) {
-        String cleanRenterName = Validation.requireNonBlank(renterName, "renterName");
+    // Records a rental for an existing, authenticated user.
+    // Checks ownership, moves the item from AVAILABLE to RENTED, and inserts
+    // the rental with an end time calculated from the start time and duration.
+    public Rental recordRental(long itemId, long renterId, int days) {
         int validDays = Validation.requireAtLeastMinimumDays(days);
 
         return transactor.inTransaction(() -> {
             Item item = itemRepository.getById(itemId);
-            User renter = userService.findOrCreateRenter(cleanRenterName);
+            User renter = userService.getUserById(renterId);
 
-            // The owner may not rent their own item. Checked by identity (user id), not by
-            // comparing names, so it still catches the case where the renter types the owner's own username.
+            // A user cannot rent their own item.
             if (Objects.equals(renter.id(), item.ownerId())) {
-                throw new BusinessRuleException("The owner of an item cannot rent their own item");
+                throw new BusinessRuleException(
+                        "The owner of an item cannot rent their own item");
             }
 
             Item rentedItem = item.transitionTo(ItemStatus.RENTED);
@@ -55,7 +55,9 @@ public class RentalService {
 
             LocalDateTime start = LocalDateTime.now(clock);
             LocalDateTime end = start.plusDays(validDays);
-            return rentalRepository.insert(Rental.newActive(itemId, renter.id(), start, end));
+
+            return rentalRepository.insert(
+                    Rental.newActive(itemId, renter.id(), start, end));
         });
     }
 

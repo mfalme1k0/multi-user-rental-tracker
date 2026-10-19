@@ -30,7 +30,8 @@ public class ItemService {
         this.transactor = Objects.requireNonNull(transactor);
     }
 
-    // Creates a listing with status AVAILABLE.
+    // Creates a new listing for the specified owner after validating the item name and daily rental cost.
+    // New listings start with AVAILABLE status.
     public Item listItem(long ownerId, String name, String description, BigDecimal costPerDay) {
         String cleanName = Validation.requireNonBlank(name, "name");
         BigDecimal validCost = Validation.requirePositive(costPerDay);
@@ -39,17 +40,19 @@ public class ItemService {
         return itemRepository.insert(Item.newListing(ownerId, cleanName, description, validCost));
     }
 
-    // Every item the owner has, whatever its status (the inventory screen).
+    // Returns all items owned by the current user, including rented and unlisted items.
     public List<Item> getInventory(long ownerId) {
         return itemRepository.findByOwnerId(ownerId);
     }
 
-    // Only AVAILABLE items: the "record a rental" list, since only those can legally be rented.
+    // Returns only AVAILABLE items owned by the current user.
+    // Rented and unlisted items are excluded because they cannot currently be rented.
     public List<Item> getAvailableItems(long ownerId) {
         return itemRepository.findByOwnerIdAndStatus(ownerId, ItemStatus.AVAILABLE);
     }
 
-    // Item plus its owner's username, for the item detail screen. throws NotFoundException no item with this id
+    // Retrieves an item's details together with its owner's username.
+    // Throws NotFoundException if the item does not exist.
     public ItemDetails getDetails(long itemId) {
         Item item = itemRepository.getById(itemId);
         String ownerUsername = userRepository.getById(item.ownerId())
@@ -63,15 +66,14 @@ public class ItemService {
 //        return itemRepository.findAvailableExcludingOwner(actingUserId);
 //    }
 
-    // AVAILABLE or RENTED -> UNLISTED.
-    // An item delisted while rented stays "out"; its active rental is untouched
+    // Removes an item from the available listings by transitioning it to UNLISTED.
+    // An active rental is not canceled if the item is delisted while rented.
     // Only the item's owner may delist it.
     public Item delist(long itemId, long actingUserId) {
         Item item = itemRepository.getById(itemId);
 
         if (item.ownerId() != actingUserId) {
-            throw new BusinessRuleException(
-                    "You can only delist your own items");
+            throw new BusinessRuleException("You can only delist your own items");
         }
 
         Item unlisted = item.transitionTo(ItemStatus.UNLISTED);
@@ -81,14 +83,24 @@ public class ItemService {
     }
 
     // UNLISTED -> AVAILABLE, only when the item has no active rental.
-    public Item relist(long itemId) {
+    // Only the item's owner may relist it, and relisting is rejected while an active rental exists.
+    // The status change is performed within a transaction.
+    public Item relist(long itemId, long actingUserId) {
         return transactor.inTransaction(() -> {
             Item item = itemRepository.getById(itemId);
-            Optional<Rental> activeRental = rentalRepository.findActiveByItemId(itemId);
+
+            if (item.ownerId() != actingUserId) {
+                throw new BusinessRuleException(
+                        "You can only relist your own items");
+            }
+
+            Optional<Rental> activeRental =
+                    rentalRepository.findActiveByItemId(itemId);
 
             if (activeRental.isPresent()) {
                 throw new BusinessRuleException(
-                        "Cannot relist item " + itemId + ": it is still out on an active rental");
+                        "Cannot relist item " + itemId
+                                + ": it is still out on an active rental");
             }
 
             Item available = item.transitionTo(ItemStatus.AVAILABLE);
@@ -97,4 +109,5 @@ public class ItemService {
             return available;
         });
     }
+
 }
