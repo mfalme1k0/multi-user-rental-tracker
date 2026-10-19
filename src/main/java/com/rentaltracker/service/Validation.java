@@ -5,14 +5,13 @@ import com.rentaltracker.exception.ValidationException;
 import java.math.BigDecimal;
 
 // Package-private input checks shared by the three services.
-// Kept in one place so a rule (e.g. "minimum 1 day")is defined once and every service enforces the same wording of the error.
+// Kept in one place, so a rule (e.g. "minimum 1 day") is defined once, and every service enforces the same wording of the error.
 final class Validation {
 
     /** The minimum number of days for a rental. */
     static final int MIN_RENTAL_DAYS = 1;
 
-    private Validation() {
-    }
+    private Validation() {}
 
     static String requireNonBlank(String value, String fieldName) {
         if (value == null || value.isBlank()) {

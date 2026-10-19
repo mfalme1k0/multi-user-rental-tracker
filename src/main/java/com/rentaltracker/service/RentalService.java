@@ -17,19 +17,18 @@ import java.util.List;
 import java.util.Objects;
 
 // Rent and return.
-
 public class RentalService {
 
-    private final ItemRepository items;
-    private final RentalRepository rentals;
+    private final ItemRepository itemRepository;
+    private final RentalRepository rentalRepository;
     private final UserService userService;
     private final Transactor transactor;
     private final Clock clock;
 
-    public RentalService(ItemRepository items, RentalRepository rentals, UserService userService,
+    public RentalService(ItemRepository itemRepository, RentalRepository rentalRepository, UserService userService,
                          Transactor transactor, Clock clock) {
-        this.items = Objects.requireNonNull(items);
-        this.rentals = Objects.requireNonNull(rentals);
+        this.itemRepository = Objects.requireNonNull(itemRepository);
+        this.rentalRepository = Objects.requireNonNull(rentalRepository);
         this.userService = Objects.requireNonNull(userService);
         this.transactor = Objects.requireNonNull(transactor);
         this.clock = Objects.requireNonNull(clock);
@@ -42,7 +41,7 @@ public class RentalService {
         int validDays = Validation.requireAtLeastMinimumDays(days);
 
         return transactor.inTransaction(() -> {
-            Item item = items.getById(itemId);
+            Item item = itemRepository.getById(itemId);
             User renter = userService.findOrCreateRenter(cleanRenterName);
 
             // The owner may not rent their own item. Checked by identity (user id), not by
@@ -52,38 +51,38 @@ public class RentalService {
             }
 
             Item rentedItem = item.transitionTo(ItemStatus.RENTED);
-            items.updateStatus(itemId, rentedItem.status());
+            itemRepository.updateStatus(itemId, rentedItem.status());
 
             LocalDateTime start = LocalDateTime.now(clock);
             LocalDateTime end = start.plusDays(validDays);
-            return rentals.insert(Rental.newActive(itemId, renter.id(), start, end));
+            return rentalRepository.insert(Rental.newActive(itemId, renter.id(), start, end));
         });
     }
 
-    // Active rentals across the owner's items, oldest due date first (the "confirm a return" list).
+    // Active rentals across the owner's items, the oldest due date first (the "confirm a return" list).
     public List<RentalDetails> getActiveRentals(long ownerId) {
-        return rentals.findActiveDetailsByOwnerId(ownerId);
+        return rentalRepository.findActiveDetailsByOwnerId(ownerId);
     }
 
     // Confirms a return: closes the rental with a return timestamp, and puts the item back to AVAILABLE
     public Rental confirmReturn(long rentalId) {
         return transactor.inTransaction(() -> {
-            Rental rental = rentals.getById(rentalId);
+            Rental rental = rentalRepository.getById(rentalId);
             if (rental.status() != RentalStatus.ACTIVE) {
                 throw new BusinessRuleException("Rental " + rentalId + " is not active, it cannot be returned");
             }
 
             LocalDateTime returnedAt = LocalDateTime.now(clock);
             Rental closed = rental.closedAt(returnedAt);
-            rentals.updateStatus(rentalId, closed.status(), returnedAt);
+            rentalRepository.updateStatus(rentalId, closed.status(), returnedAt);
 
-            Item item = items.getById(rental.itemId());
+            Item item = itemRepository.getById(rental.itemId());
             if (item.status() == ItemStatus.RENTED) {
                 Item available = item.transitionTo(ItemStatus.AVAILABLE);
-                items.updateStatus(item.id(), available.status());
+                itemRepository.updateStatus(item.id(), available.status());
             }
-            // else: item is UNLISTED (delisted while out) - leave it as the owner set it.
 
+            // else: item is UNLISTED (delisted while out) - leave it as the owner set it.
             return closed;
         });
     }
