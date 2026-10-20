@@ -16,7 +16,7 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=build /app/target/rental-tracker-0.1.0-SNAPSHOT.jar app.jar
 
 # Directory used for the persistent SQLite database.
 RUN mkdir -p /data
