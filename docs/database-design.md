@@ -602,19 +602,20 @@ The SQL is read as UTF-8 and executed against the SQLite connection.
 
 ### Migration policy for the multi-user schema
 
-`DatabaseManager` performs a versioned migration from the single-user users table. When an existing database has no
-`password` column, the users table is rebuilt with the multi-user shape while preserving user IDs, usernames,
-timestamps, and all rows that reference those IDs. Legacy rows receive an empty, unusable password hash rather than
-an invented credential; the authentication flow must require those accounts to be registered or reset before login.
+`DatabaseManager` uses schema version 3. SQLite's `CREATE TABLE IF NOT EXISTS` does not alter an existing table, so an
+old single-user database without `users.password` cannot be upgraded in place. A database is also considered legacy if
+it contains an empty password value left by the earlier intermediate migration.
 
-This migration is deliberately explicit because SQLite's `CREATE TABLE IF NOT EXISTS` does not alter an existing
-table. A fresh database receives `password TEXT NOT NULL` directly from `schema.sql`, while an existing database is
-upgraded to schema version 2. The rebuild temporarily disables foreign-key enforcement, runs inside a transaction,
-checks for dangling references, restores the connection settings, and fails rather than risking silent data loss.
+When legacy data is detected, `DatabaseManager` explicitly drops the application tables (`rentals`, `listed_items`,
+and `users`) and recreates the complete schema in one transaction. It does not leave legacy usernames with empty or
+invented credentials. This is a deliberate destructive reset: old accounts and rental history must be recreated or
+seeded for the multi-user application. Normal startup on an already-current database does not drop or overwrite data.
 
-The alternative was to document a fresh-schema-only reset. That would be simpler, but it would discard existing rental
-history and make a persistent Docker volume unsafe to upgrade. The migration is therefore the safer choice even though
-it adds implementation and test complexity.
+The alternative was preserving legacy rows with an empty unusable hash or rebuilding only the users table. That keeps
+more data but leaves usernames that cannot authenticate and creates ambiguous recovery behavior. The team chose a
+clear reset because the old accounts have no valid credentials and the project is still at the migration stage. The
+trade-off is explicit loss of legacy data, so the Docker upgrade procedure must back up or remove the old volume before
+adopting this schema version.
 
 Foreign-key enforcement is explicitly enabled on every connection:
 
@@ -629,7 +630,9 @@ Development seed data must also be safe to apply repeatedly.
 
 The initialization process must not insert duplicate users, items, or rental records on every launch. Use a deliberate, idempotent seed-data strategy, such as stable seed identifiers with conflict handling or checking whether the required seed records already exist.
 
-Seed initialization must preserve existing user data and rental history. It must not delete and recreate populated tables to restore demo data.
+Seed initialization must preserve existing current-schema user data and rental history. It must not delete and recreate
+populated current-schema tables to restore demo data. The separate legacy-schema reset described above is the only
+intentional destructive initialization path.
 
 Schema initialization and seed-data initialization are separate responsibilities: schema statements establish the database structure, while seed logic supplies the required development/demo records.
 
@@ -778,7 +781,8 @@ The final command and image configuration must match the actual `Dockerfile` and
 - Recreating a container while reusing the same named volume must preserve the database.
 - Schema initialization must succeed when the volume contains no database.
 - Subsequent launches must not fail because existing tables or indexes already exist.
-- Initialization must not overwrite or erase existing records.
+- Initialization must not overwrite or erase existing current-schema records. A legacy schema is the documented
+  exception and is reset explicitly rather than partially migrated.
 - Database connections must be closed cleanly on application shutdown.
 
 A named Docker volume persists independently of the container. Removing a container does not normally remove the named volume, but explicitly deleting the volume will remove its persisted database data.
