@@ -31,31 +31,32 @@ public class Transport {
 
     //    Starts the application by determining whether this is the first launch
     //    If not, then starts the main menu for the owner already existing in DB.
-    public void start() {
-        Optional<User> owner = userService.findOwner();
-
-        User currentOwner;
-
-        if (owner.isPresent()) {
-            currentOwner = subsequentRuns(owner.get());
-        } else {
-            currentOwner = firstLaunch();
-        }
-
-        runMenu(currentOwner);
-    }
+//    public void start() {
+//        Optional<User> owner = userService.findOwner();
+//
+//        User currentOwner;
+//
+//        if (owner.isPresent()) {
+//            currentOwner = subsequentRuns(owner.get());
+//        } else {
+//            currentOwner = firstLaunch();
+//        }
+//
+//       runMenu(currentOwner);
+//    }
 
     //   Handles the first launch by asking for the owner's username, then registering them.
-    public User firstLaunch() {
-        System.out.print("Enter your username: ");
-        String username = input.nextLine().trim().toLowerCase();
-
-        User owner = userService.registerOwner(username);
-
-        System.out.println("Welcome, " + owner.username() + "!");
-
-        return owner;
-    }
+//    public User firstLaunch() {
+//        System.out.print("Enter your username: ");
+//        String username = input.nextLine().trim().toLowerCase();
+//
+//        User owner = userService.registerOwner(username);
+//
+//        System.out.println("Welcome, " + owner.username() + "!");
+//
+//       return owner;
+//
+//    }
 
     //  Handles subsequent launches where user was already registered
     private User subsequentRuns(User user) {
@@ -253,7 +254,7 @@ public class Transport {
                 continue;
             }
 
-            item = changeItemStatus(item);
+//            item = changeItemStatus(item);
         }
     }
 
@@ -268,27 +269,27 @@ public class Transport {
         System.out.println("listing date   " + item.createdAt());
     }
 
-    //    Requests the appropriate status change from the service layer and returns the updated item for display.
-    private Item changeItemStatus(Item item) {
-        try {
-            if (item.status() == ItemStatus.AVAILABLE || item.status() == ItemStatus.RENTED) {
-                Item delistedItem = itemService.delist(item.id());
-
-                System.out.println("Item delisted.");
-                return delistedItem;
-            }
-
-            // ItemStatus has no other value than UNLISTED left at this point.
-            Item relistedItem = itemService.relist(item.id());
-
-            System.out.println("Item relisted.");
-            return relistedItem;
-
-        } catch (BusinessRuleException e) {
-            System.out.println(e.getMessage());
-            return item;
-        }
-    }
+//    //    Requests the appropriate status change from the service layer and returns the updated item for display.
+//    private Item changeItemStatus(Item item) {
+//        try {
+//            if (item.status() == ItemStatus.AVAILABLE || item.status() == ItemStatus.RENTED) {
+//                Item delistedItem = itemService.delist(item.id());
+//
+//                System.out.println("Item delisted.");
+//                return delistedItem;
+//            }
+//
+//            // ItemStatus has no other value than UNLISTED left at this point.
+//            Item relistedItem = itemService.relist(item.id());
+//
+//            System.out.println("Item relisted.");
+//            return relistedItem;
+//
+//        } catch (BusinessRuleException e) {
+//            System.out.println(e.getMessage());
+//            return item;
+//        }
+//    }
 
     //    Displays the owner's available items with pagination and lets them select an item to start a rental.
     private void recordRental(User owner) {
@@ -339,7 +340,7 @@ public class Transport {
 
                 Item item = items.get(start + selected - 1);
 
-                createRental(item);
+//                createRental(item);
                 return;
             }
 
@@ -369,38 +370,38 @@ public class Transport {
     }
 
     //    Collects renter's name and rental duration details, then asks the rental service to create the rental.
-    private void createRental(Item item) {
-        System.out.print("Renter username: ");
-        String renterUsername = input.nextLine().trim();
-
-        System.out.print("Duration in days: ");
-
-        int durationDays;
-
-        try {
-            durationDays = Integer.parseInt(input.nextLine().trim());
-
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid duration.");
-            return;
-        }
-
-        try {
-            Rental rental = rentalService.recordRental(
-                    item.id(),
-                    renterUsername,
-                    durationDays
-            );
-
-            System.out.println();
-            System.out.println("Rental recorded successfully.");
-            System.out.println("Rental ID: " + rental.id());
-            System.out.println("Ends: " + rental.endTime());
-
-        } catch (BusinessRuleException e) {
-            System.out.println(e.getMessage());
-        }
-    }
+//    private void createRental(Item item) {
+//        System.out.print("Renter username: ");
+//        String renterUsername = input.nextLine().trim();
+//
+//        System.out.print("Duration in days: ");
+//
+//        int durationDays;
+//
+//        try {
+//            durationDays = Integer.parseInt(input.nextLine().trim());
+//
+//        } catch (NumberFormatException e) {
+//            System.out.println("Invalid duration.");
+//            return;
+//        }
+//
+//        try {
+//            Rental rental = rentalService.recordRental(
+//                    item.id(),
+//                    renterUsername,
+//                    durationDays
+//            );
+//
+//            System.out.println();
+//            System.out.println("Rental recorded successfully.");
+//            System.out.println("Rental ID: " + rental.id());
+//            System.out.println("Ends: " + rental.endTime());
+//
+//        } catch (BusinessRuleException e) {
+//            System.out.println(e.getMessage());
+//        }
+//    }
 
     //   Displays the owner's active rentals with pagination and lets them select a rental to view and confirm its return.
     private void confirmReturn(User owner) {
@@ -452,7 +453,7 @@ public class Transport {
 
                 RentalDetails rentalDetails = rentals.get(start + selected - 1);
 
-                showRentalDetails(rentalDetails);
+//                showRentalDetails(rentalDetails);
 
                 // Refresh after a possible return so closed rentals disappear.
                 rentals = rentalService.getActiveRentals(owner.id());
@@ -494,43 +495,43 @@ public class Transport {
     }
 
     //    Displays an active rental's details and allows the owner to confirm the return or go back to the rental list.
-    private void showRentalDetails(RentalDetails rentalDetails) {
-        Rental rental = rentalDetails.rental();
-
-        while (true) {
-            printRentalDetails(rentalDetails);
-
-            System.out.println();
-
-            // The list this screen is opened from only holds ACTIVE rentals.
-            System.out.println("1) Confirm return");
-
-            System.out.println("2) Back to list");
-            System.out.print("> ");
-
-            String choice = input.nextLine().trim();
-
-            if (choice.equals("2") || choice.equalsIgnoreCase("B")) {
-                return;
-            }
-
-            if (choice.equals("1")) {
-
-                try {
-                    rentalService.confirmReturn(rental.id());
-                    System.out.println("Return confirmed successfully.");
-                    return;
-
-                } catch (BusinessRuleException e) {
-                    System.out.println(e.getMessage());
-                }
-
-                continue;
-            }
-
-            System.out.println("Invalid option.");
-        }
-    }
+//    private void showRentalDetails(RentalDetails rentalDetails) {
+//        Rental rental = rentalDetails.rental();
+//
+//        while (true) {
+//            printRentalDetails(rentalDetails);
+//
+//            System.out.println();
+//
+//            // The list this screen is opened from only holds ACTIVE rentals.
+//            System.out.println("1) Confirm return");
+//
+//            System.out.println("2) Back to list");
+//            System.out.print("> ");
+//
+//            String choice = input.nextLine().trim();
+//
+//            if (choice.equals("2") || choice.equalsIgnoreCase("B")) {
+//                return;
+//            }
+//
+//            if (choice.equals("1")) {
+//
+//                try {
+//                    rentalService.confirmReturn(rental.id());
+//                    System.out.println("Return confirmed successfully.");
+//                    return;
+//
+//                } catch (BusinessRuleException e) {
+//                    System.out.println(e.getMessage());
+//                }
+//
+//                continue;
+//            }
+//
+//            System.out.println("Invalid option.");
+//        }
+//    }
 
     //    Prints the details of a rental selected from the active rental list.
     private void printRentalDetails(RentalDetails rentalDetails) {
