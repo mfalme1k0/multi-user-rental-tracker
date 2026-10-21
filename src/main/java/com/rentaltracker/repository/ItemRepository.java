@@ -12,27 +12,23 @@ import java.util.Optional;
  */
 public interface ItemRepository {
 
-    /**
-     * @return the saved item with id and createdAt filled in.
-     * @throws com.rentaltracker.exception.NotNullConstraintException missing required field
-     * @throws com.rentaltracker.exception.ForeignKeyConstraintException unknown owner
-     */
     Item insert(Item item);
 
     Optional<Item> findById(long id);
 
-    /** @throws com.rentaltracker.exception.NotFoundException when no row has this id */
     Item getById(long id);
 
-    /** Every item the owner has, in any status, oldest first (the inventory screen). */
+    //  Every item the owner has, in any status, oldest first (the inventory screen).
     List<Item> findByOwnerId(long ownerId);
 
-    /** The owner's items in one status, oldest first (e.g. AVAILABLE for the "record a rental" list). */
+    //  The owner's items in one status, oldest first (e.g. AVAILABLE for the "record a rental" list).
     List<Item> findByOwnerIdAndStatus(long ownerId, ItemStatus status);
 
-    /**
-     * @throws com.rentaltracker.exception.NotFoundException when no row has this id (0 rows updated)
-     * @throws com.rentaltracker.exception.CheckConstraintException status rejected by the database
-     */
+    //  Available listings owned by somebody other than the supplied user, using database-level paging.
+    Page<Item> findAvailableExcludingOwner(long excludedOwnerId, int pageNumber, int pageSize);
+
+    // Changes an item from AVAILABLE to RENTED only when it is still available.
+    boolean markRentedIfAvailable(long itemId);
+
     void updateStatus(long itemId, ItemStatus status);
 }
