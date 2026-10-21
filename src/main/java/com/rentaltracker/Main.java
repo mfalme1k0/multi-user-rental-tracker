@@ -1,5 +1,9 @@
 package com.rentaltracker;
 
+import com.rentaltracker.auth.AuthService;
+import com.rentaltracker.auth.AuthServiceImpl;
+import com.rentaltracker.auth.PasswordHasherImpl;
+import com.rentaltracker.exception.DatabaseException;
 import com.rentaltracker.infrastructure.DatabaseManager;
 import com.rentaltracker.repository.ItemRepository;
 import com.rentaltracker.repository.RentalRepository;
@@ -12,7 +16,11 @@ import com.rentaltracker.repository.sqlite.SQLiteUserRepository;
 import com.rentaltracker.service.ItemService;
 import com.rentaltracker.service.RentalService;
 import com.rentaltracker.service.UserService;
+import com.rentaltracker.transport.ConsoleIO;
 import com.rentaltracker.transport.Transport;
+import com.rentaltracker.validation.AuthValidatorImpl;
+import com.rentaltracker.validation.ItemValidatorImpl;
+import com.rentaltracker.validation.RentalValidatorImpl;
 
 import java.nio.file.Path;
 import java.time.Clock;
@@ -38,37 +46,32 @@ public final class Main {
 
         DatabaseManager databaseManager = new DatabaseManager(databasePath);
 
-        databaseManager.initialize();
+        try {
+            databaseManager.initialize();
+        } catch (DatabaseException e) {
+            // An unusable database is unrecoverable (D23).
+            System.err.println("Could not open the database. See log for details.");
+            System.exit(1);
+            return;
+        }
 
         UserRepository userRepository = new SQLiteUserRepository(databaseManager);
-        UserService userService = new UserService(userRepository);
-
         ItemRepository itemRepository = new SQLiteItemRepository(databaseManager);
         RentalRepository rentalRepository = new SQLiteRentalRepository(databaseManager);
         Transactor transactor = new SQLiteTransactor(databaseManager);
 
-//        ItemService itemService = new ItemService(
-//                itemRepository,
-//                rentalRepository,
-//                userRepository,
-//                transactor);
-//
-//        Clock clock = Clock.systemDefaultZone();
-//
-//        RentalService rentalService = new RentalService(
-//                itemRepository,
-//                rentalRepository,
-//                userService,
-//                transactor,
-//                clock
-//        );
-//
-//        Transport transport = new Transport(
-//                userService,
-//                itemService,
-//                rentalService
-//        );
-//
-//        transport.start();
+        UserService userService = new UserService(userRepository);
+
+        AuthService authService = new AuthServiceImpl(
+                userRepository, new PasswordHasherImpl(), new AuthValidatorImpl(), transactor);
+
+        ItemService itemService = new ItemService(
+                itemRepository, rentalRepository, userService, transactor, new ItemValidatorImpl());
+
+        RentalService rentalService = new RentalService(
+                itemRepository, rentalRepository, userService, transactor,
+                new RentalValidatorImpl(), Clock.systemUTC());
+
+        new Transport(authService, itemService, rentalService, ConsoleIO.system()).run();
     }
 }
