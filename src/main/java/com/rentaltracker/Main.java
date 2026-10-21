@@ -47,28 +47,28 @@ public final class Main {
         RentalRepository rentalRepository = new SQLiteRentalRepository(databaseManager);
         Transactor transactor = new SQLiteTransactor(databaseManager);
 
-        ItemService itemService = new ItemService(
-                itemRepository,
-                rentalRepository,
-                userRepository,
-                transactor);
-
-        Clock clock = Clock.systemDefaultZone();
-
-        RentalService rentalService = new RentalService(
-                itemRepository,
-                rentalRepository,
-                userService,
-                transactor,
-                clock
-        );
-
-        Transport transport = new Transport(
-                userService,
-                itemService,
-                rentalService
-        );
-
-        transport.start();
+//        ItemService itemService = new ItemService(
+//                itemRepository,
+//                rentalRepository,
+//                userRepository,
+//                transactor);
+//
+//        Clock clock = Clock.systemDefaultZone();
+//
+//        RentalService rentalService = new RentalService(
+//                itemRepository,
+//                rentalRepository,
+//                userService,
+//                transactor,
+//                clock
+//        );
+//
+//        Transport transport = new Transport(
+//                userService,
+//                itemService,
+//                rentalService
+//        );
+//
+//        transport.start();
     }
 }

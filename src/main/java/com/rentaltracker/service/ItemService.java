@@ -1,83 +1,137 @@
 package com.rentaltracker.service;
 
-import com.rentaltracker.domain.Item;
-import com.rentaltracker.domain.ItemDetails;
-import com.rentaltracker.domain.ItemStatus;
-import com.rentaltracker.domain.Rental;
+import com.rentaltracker.domain.*;
 import com.rentaltracker.exception.BusinessRuleException;
 import com.rentaltracker.repository.ItemRepository;
 import com.rentaltracker.repository.RentalRepository;
 import com.rentaltracker.repository.Transactor;
-import com.rentaltracker.repository.UserRepository;
+
+import com.rentaltracker.validation.ItemValidator;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Listing, inventory, delist/relist. */
+// Listing, inventory, delist/relist
 public class ItemService {
 
-    private final ItemRepository items;
-    private final RentalRepository rentals;
-    private final UserRepository users;
+    private final ItemRepository itemRepository;
+    private final RentalRepository rentalRepository;
+    private final UserService userService;
     private final Transactor transactor;
+    private final ItemValidator itemValidator;
 
-    public ItemService(ItemRepository items, RentalRepository rentals, UserRepository users, Transactor transactor) {
-        this.items = Objects.requireNonNull(items);
-        this.rentals = Objects.requireNonNull(rentals);
-        this.users = Objects.requireNonNull(users);
+    public ItemService(ItemRepository itemRepository,
+                       RentalRepository rentalRepository,
+                       UserService userService,
+                       Transactor transactor,
+                       ItemValidator itemValidator) {
+        this.itemRepository = Objects.requireNonNull(itemRepository);
+        this.rentalRepository = Objects.requireNonNull(rentalRepository);
+        this.userService = Objects.requireNonNull(userService);
         this.transactor = Objects.requireNonNull(transactor);
+        this.itemValidator = Objects.requireNonNull(itemValidator);
     }
 
-    // Creates a listing with status AVAILABLE.
+    // Creates a new listing for the specified owner after validating the item name and daily rental cost.
+    // New listings start with AVAILABLE status.
+    public Item listItem(long ownerId, String name,
+                         String description, BigDecimal costPerDay) {
 
-    public Item listItem(long ownerId, String name, String description, BigDecimal costPerDay) {
-        String cleanName = Validation.requireNonBlank(name, "name");
-        BigDecimal validCost = Validation.requirePositive(costPerDay);
-        // description is free text and may legitimately be blank/absent, so it is not run through requireNonBlank
-        return items.insert(Item.newListing(ownerId, cleanName, description, validCost));
+        String cleanName = itemValidator.validateName(name);
+        BigDecimal validCost = itemValidator.validateCostPerDay(costPerDay);
+
+        return transactor.inTransaction(() -> {
+            // Verify that the owner exists before creating the listing.
+            User owner = userService.getUserById(ownerId);
+
+            return itemRepository.insert(
+                    Item.newListing(owner.id(), cleanName, description, validCost));
+        });
     }
 
-    /** Every item the owner has, whatever its status (the inventory screen). */
+    // Returns all items owned by the current user, including rented and unlisted items.
     public List<Item> getInventory(long ownerId) {
-        return items.findByOwnerId(ownerId);
+        // Verify that the owner exists before querying their listings.
+        userService.getUserById(ownerId);
+
+        return itemRepository.findByOwnerId(ownerId);
     }
 
-    /** Only AVAILABLE items: the "record a rental" list, since only those can legally be rented. */
+    // Returns only AVAILABLE items owned by the current user.
+    // Rented and unlisted items are excluded because they cannot currently be rented.
     public List<Item> getAvailableItems(long ownerId) {
-        return items.findByOwnerIdAndStatus(ownerId, ItemStatus.AVAILABLE);
+        // Verify that the owner exists before querying their listings.
+        userService.getUserById(ownerId);
+
+        return itemRepository.findByOwnerIdAndStatus(ownerId, ItemStatus.AVAILABLE);
     }
 
-    /**
-     * Item plus its owner's username, for the item detail screen. throws com.rentaltracker.exception.NotFoundException no item with this id
-     */
+    // Retrieves an item's details together with its owner's username.
+    // Throws NotFoundException if the item does not exist.
     public ItemDetails getDetails(long itemId) {
-        Item item = items.getById(itemId);
-        String ownerUsername = users.getById(item.ownerId()).username();
+        Item item = itemRepository.getById(itemId);
+        String ownerUsername = userService.getUserById(item.ownerId())
+                .username();
+
         return new ItemDetails(item, ownerUsername);
     }
 
-    // AVAILABLE or RENTED -> UNLISTED. An item delisted while rented stays "out"; its active rental is untouched
-    public Item delist(long itemId) {
-        Item item = items.getById(itemId);
-        Item unlisted = item.transitionTo(ItemStatus.UNLISTED);
-        items.updateStatus(itemId, unlisted.status());
-        return unlisted;
+    // TODO
+    // Available listings belonging to other users.
+//    public List<Item> getMarketplaceListings(long actingUserId) {
+//        return itemRepository.findAvailableExcludingOwner(actingUserId);
+//    }
+
+    // Removes an item from the available listings by transitioning it to UNLISTED.
+    // An active rental is not canceled if the item is delisted while rented.
+    // Only the item's owner may delist it.
+    public Item delist(long itemId, long requestingUserId) {
+        return transactor.inTransaction(() -> {
+            // Verify that the requesting user exists before checking ownership.
+            userService.getUserById(requestingUserId);
+
+            Item item = itemRepository.getById(itemId);
+
+            if (item.ownerId() != requestingUserId) {
+                throw new BusinessRuleException("You can only delist your own items");
+            }
+
+            Item unlisted = item.transitionTo(ItemStatus.UNLISTED);
+            itemRepository.updateStatus(itemId, unlisted.status());
+
+            return unlisted;
+        });
     }
 
     // UNLISTED -> AVAILABLE, only when the item has no active rental.
-
-    public Item relist(long itemId) {
+    // Only the item's owner may relist it, and relisting is rejected while an active rental exists.
+    // The status change is performed within a transaction.
+    public Item relist(long itemId, long requestingUserId) {
         return transactor.inTransaction(() -> {
-            Item item = items.getById(itemId);
-            Optional<Rental> activeRental = rentals.findActiveByItemId(itemId);
+            // Verify that the requesting user exists before checking ownership.
+            userService.getUserById(requestingUserId);
+
+            Item item = itemRepository.getById(itemId);
+
+            if (item.ownerId() != requestingUserId) {
+                throw new BusinessRuleException(
+                        "You can only relist your own items");
+            }
+
+            Optional<Rental> activeRental =
+                    rentalRepository.findActiveByItemId(itemId);
+
             if (activeRental.isPresent()) {
                 throw new BusinessRuleException(
-                        "Cannot relist item " + itemId + ": it is still out on an active rental");
+                        "Cannot relist item " + itemId
+                                + ": it is still out on an active rental");
             }
+
             Item available = item.transitionTo(ItemStatus.AVAILABLE);
-            items.updateStatus(itemId, available.status());
+            itemRepository.updateStatus(itemId, available.status());
+
             return available;
         });
     }
