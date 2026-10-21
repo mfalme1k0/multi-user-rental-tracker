@@ -133,31 +133,6 @@ public class SQLiteUserRepository implements UserRepository {
     }
 
     @Override
-    public Optional<User> findFirst() {
-        String sql = """
-            SELECT id, username, password, created_at
-            FROM users
-            ORDER BY id ASC
-            LIMIT 1
-            """;
-        Connection connection = databaseManager.getConnection();
-        try (
-                PreparedStatement statement = connection.prepareStatement(sql);
-                ResultSet resultSet = statement.executeQuery()) {
-
-            return resultSet.next()
-                    ? Optional.of(mapUser(resultSet))
-                    : Optional.empty();
-
-        } catch (SQLException e) {
-            throw SQLiteExceptionTranslator.translate(e);
-        }
-        finally {
-            databaseManager.releaseConnection(connection);
-        }
-    }
-
-    @Override
     public User getById(long id) {
         return findById(id)
                 .orElseThrow(() ->
@@ -189,4 +164,29 @@ public class SQLiteUserRepository implements UserRepository {
             );
         }
     }
+    @Override
+    public Optional<User> findFirst() {
+        String sql = """
+        SELECT id, username, password, created_at
+        FROM users
+        ORDER BY id ASC
+        LIMIT 1
+        """;
+
+        Connection connection = databaseManager.getConnection();
+
+        try (
+                PreparedStatement statement = connection.prepareStatement(sql);
+                ResultSet resultSet = statement.executeQuery()
+        ) {
+            return resultSet.next()
+                    ? Optional.of(mapUser(resultSet))
+                    : Optional.empty();
+        } catch (SQLException e) {
+            throw SQLiteExceptionTranslator.translate(e);
+        } finally {
+            databaseManager.releaseConnection(connection);
+        }
+    }
+
 }
