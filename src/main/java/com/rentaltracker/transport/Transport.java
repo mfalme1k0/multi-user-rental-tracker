@@ -1,623 +1,390 @@
 package com.rentaltracker.transport;
 
+import com.rentaltracker.auth.AuthService;
+import com.rentaltracker.domain.Item;
+import com.rentaltracker.domain.ItemDetails;
+import com.rentaltracker.domain.ItemStatus;
+import com.rentaltracker.domain.Rental;
+import com.rentaltracker.domain.RentalDetails;
 import com.rentaltracker.domain.User;
 import com.rentaltracker.exception.BusinessRuleException;
-import com.rentaltracker.service.UserService;
-
-import com.rentaltracker.domain.*;
+import com.rentaltracker.exception.DatabaseException;
+import com.rentaltracker.exception.InputClosedException;
+import com.rentaltracker.exception.NotFoundException;
 import com.rentaltracker.service.ItemService;
 import com.rentaltracker.service.RentalService;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.Scanner;
 
 
 public class Transport {
 
-    private static final int PAGE_SIZE = 5;
+    // Timestamps are stored as UTC (D9), so say so when displaying them.
+    private static final DateTimeFormatter DISPLAY_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'");
 
-    private final UserService userService;
+    private final AuthService authService;
     private final ItemService itemService;
     private final RentalService rentalService;
-    private final Scanner input;
+    private final ConsoleIO io;
+    private final Session session;
+    private final ListScreen listScreen;
 
-    public Transport(UserService userService, ItemService itemService, RentalService rentalService) {
-        this.userService = userService;
-        this.itemService = itemService;
-        this.rentalService = rentalService;
-        this.input = new Scanner(System.in);
-    }
-     //asks if the user is registered or if its their first time
-    //then proceeds to login or register
-    public void start() {
-        System.out.println("Do you have an account?");
-        System.out.println("1: Login");
-        System.out.println("2: Register");
-
-        String option = input.nextLine().trim();
-        switch (option){
-            case "1" -> Login();
-            case "2" -> Register();
-        }
-
-
-
-//        Optional<User> owner = userService.findOwner();
-//
-//        User currentOwner;
-//
-//        if (owner.isPresent()) {
-//            currentOwner = subsequentRuns(owner.get());
-//        } else {
-//            currentOwner = firstLaunch();
-//        }
-//
-//        runMenu(currentOwner);
-    }
-    public void Login(){
-        String username = getUsername();
-        String password = getPassword();
-        System.out.println("feature under construction!!");
-    }
-    public void Register(){
-        String username = getUsername();
-        String password = getPassword();
-        System.out.println("feature under construction!!");
-    }
-    //helper for getting input before logging in or signing up -both take a username and password
- private String getUsername(){
-     System.out.println("Enter username:");
-     return input.nextLine().toLowerCase().trim();
- }
-
- private String getPassword(){
-     System.out.println("Enter password");
-     return input.nextLine().trim();
- }
-
-    //   Handles the first launch by asking for the owner's username, then registering them.
-    public User firstLaunch() {
-        System.out.print("Enter your username: ");
-        String username = input.nextLine().trim().toLowerCase();
-
-        User owner = userService.registerOwner(username);
-
-        System.out.println("Welcome, " + owner.username() + "!");
-
-        return owner;
+    public Transport(AuthService authService,
+                     ItemService itemService,
+                     RentalService rentalService,
+                     ConsoleIO io) {
+        this(authService, itemService, rentalService, io, new Session());
     }
 
-    //  Handles subsequent launches where user was already registered
-    private User subsequentRuns(User user) {
-        System.out.println("Welcome back, " + user.username() + "!");
-        return user;
+    // Package-private so tests can inspect or pre-seed the session.
+    Transport(AuthService authService,
+              ItemService itemService,
+              RentalService rentalService,
+              ConsoleIO io,
+              Session session) {
+        this.authService = Objects.requireNonNull(authService);
+        this.itemService = Objects.requireNonNull(itemService);
+        this.rentalService = Objects.requireNonNull(rentalService);
+        this.io = Objects.requireNonNull(io);
+        this.session = Objects.requireNonNull(session);
+        this.listScreen = new ListScreen(io);
     }
 
-    //    Displays the application's main menu options.
-    private void printMenu() {
-        System.out.println();
-        System.out.println("=== Rental tracker ===");
-        System.out.println("1) List an item");
-        System.out.println("2) View my inventory");
-        System.out.println("3) Browse listings");
-        System.out.println("4) Confirm a return");
-        System.out.println("5) Exit");
-        System.out.println("======================");
-        System.out.print("> ");
-    }
+    // ------------------------------------------------------------------ lifecycle
 
-    //    Keeps the application running and routes each menu choice to the corresponding method operation.
-    private void runMenu(User owner) {
-        boolean running = true;
-
-        while (running) {
-            printMenu();
-
-            String choice = input.nextLine().trim();
-
-            switch (choice) {
-                case "1" -> listItem(owner);
-                case "2" -> viewInventory(owner);
-                case "3" -> recordRental(owner);
-                case "4" -> confirmReturn(owner);
-                case "5" -> {
-                    running = false;
-                    System.out.println("Goodbye.");
-                }
-
-                default -> System.out.println("Invalid option.");
+  //  Runs until the user exits or input ends. Always logs out on the way out.
+    public void run() {
+        try {
+            boolean running = true;
+            while (running) {
+                running = session.isLoggedIn() ? mainMenu() : authMenu();
             }
+        } catch (InputClosedException e) {
+            io.println();
+        } finally {
+            session.logOut();
+            io.println("Goodbye.");
         }
     }
 
-    //    Collects item details from the owner and asks the service layer to create the listing.
-    private void listItem(User owner) {
-        System.out.println();
-        System.out.println("=== List an item ===");
+    //--------------------------------------------------- authentication---------------------------------------------
 
-        System.out.print("Name: ");
-        String name = input.nextLine().trim();
+    private boolean authMenu() {
+        io.println();
+        io.println("=== Rental Tracker ===");
+        io.println("1. Log in");
+        io.println("2. Register");
+        io.println("3. Exit");
 
-        System.out.print("Description: ");
-        String description = input.nextLine().trim();
-
-        System.out.print("Cost per day: ");
-
-        BigDecimal costPerDay;
-
-        try {
-            costPerDay = new BigDecimal(input.nextLine().trim());
-
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid cost.");
-            return;
+        switch (io.readLine("> ")) {
+            case "1" -> guarded(this::logIn);
+            case "2" -> guarded(this::register);
+            case "3" -> {
+                return false;
+            }
+            default -> io.println("Invalid option.");
         }
-
-        try {
-            itemService.listItem(
-                    owner.id(),
-                    name,
-                    description,
-                    costPerDay
-            );
-
-            System.out.println("Item listed successfully.");
-
-        } catch (BusinessRuleException e) {
-            System.out.println(e.getMessage());
-        }
+        return true;
     }
 
-    //    Displays the owner's inventory with pagination and allows the owner to open an individual item's details.
-    private void viewInventory(User owner) {
-        List<Item> items = itemService.getInventory(owner.id());
+    private void logIn() {
+        String username = io.readLine("Username: ");
+        String password = io.readPassword("Password: ");
 
-        if (items.isEmpty()) {
-            printEmptyInventory();
+        User user = authService.login(username, password);
+        session.logIn(user);
+        io.println("Welcome back, " + user.username() + "!");
+    }
+
+    private void register() {
+        String username = io.readLine("Choose a username: ");
+        String password = io.readPassword("Choose a password: ");
+        String confirmation = io.readPassword("Confirm password: ");
+
+        if (!password.equals(confirmation)) {
+            io.println("Passwords do not match.");
             return;
         }
 
-        int page = 0;
+        User user = authService.register(username, password);
+        session.logIn(user);
+        io.println("Account created. Welcome, " + user.username() + "!");
+    }
 
+    // -------------------------------------------------------- main menu----------------------------------------------
+
+    private boolean mainMenu() {
+        io.println();
+        io.println("=== Rental Tracker ===");
+        io.println("Logged in as " + session.currentUser().username());
+        io.println("1. List an item");
+        io.println("2. View my inventory");
+        io.println("3. Browse listings");
+        io.println("4. Confirm a return");
+        io.println("5. Exit");
+
+        switch (io.readLine("> ")) {
+            case "1" -> guarded(this::listItem);
+            case "2" -> guarded(this::viewInventory);
+            case "3" -> guarded(this::browseListings);
+            case "4" -> guarded(this::confirmReturn);
+            case "5" -> {
+                session.logOut();
+                return false;
+            }
+            default -> io.println("Invalid option.");
+        }
+        return true;
+    }
+
+    // --------------------------------------------------- list an item-------------------------------------------------
+
+    private void listItem() {
+        io.println();
+        io.println("=== List an item ===");
+
+        String name = io.readLine("Name: ");
+        String description = io.readLine("Description: ");
+
+        Optional<BigDecimal> cost = readDecimal("Cost per day: ");
+        if (cost.isEmpty()) {
+            io.println("Invalid cost.");
+            return;
+        }
+
+        // Blank name, non-positive cost and so on are rejected by ItemService (ValidationException).
+        Item item = itemService.listItem(session.userId(), name, description, cost.get());
+        io.println("Item listed successfully (id " + item.id() + ").");
+    }
+
+    // ----------------------------------------------------- inventory-------------------------------------------------
+
+    private void viewInventory() {
         while (true) {
-            int start = page * PAGE_SIZE;
-            int end = Math.min(
-                    start + PAGE_SIZE,
-                    items.size()
-            );
-
-            printInventoryPage(items, start, end);
-
-            String choice = readPaginationChoice(
-                    page,
-                    end,
-                    items.size()
-            );
-
-            if (choice.equals("B")) {
+            List<Item> items = itemService.getInventory(session.userId());
+            if (items.isEmpty()) {
+                io.println();
+                io.println("No items found.");
                 return;
             }
 
-            if (choice.equals("N") && end < items.size()) {
-                page++;
-                continue;
+            Optional<Item> selected = listScreen.select(
+                    "My inventory", items, item -> item.name() + " - " + statusText(item.status()));
+            if (selected.isEmpty()) {
+                return;
             }
-
-            if (choice.equals("P") && page > 0) {
-                page--;
-                continue;
-            }
-
-            Integer selected = parseSelection(choice);
-
-            if (selected != null
-                    && selected >= 1
-                    && selected <= end - start) {
-
-                Item item = items.get(start + selected - 1);
-
-                showItemDetails(item, owner);
-
-                items = itemService.getInventory(owner.id());
-
-                continue;
-            }
-
-            System.out.println("Invalid option.");
+            showOwnItem(selected.get().id());
         }
     }
 
-    //    Displays the inventory's empty state when the owner has no items.
-    private void printEmptyInventory() {
-        System.out.println();
-        System.out.println("=== My inventory ===");
-        System.out.println("No items found.");
-    }
-
-    //    Displays one page of inventory items with their current status.
-    private void printInventoryPage(
-            List<Item> items,
-            int start,
-            int end) {
-
-        System.out.println();
-        System.out.println("=== My inventory ===");
-
-        for (int i = start; i < end; i++) {
-            Item item = items.get(i);
-
-            System.out.printf(
-                    "%d) %s - %s%n",
-                    i - start + 1,
-                    item.name(),
-                    item.status()
-                            .name()
-                            .toLowerCase()
-            );
-        }
-    }
-
-    //    Displays an item's details and lets the owner delist or relist it.
-    private void showItemDetails(Item item, User owner) {
+    //for showing users own items , delisting, relisting
+    private void showOwnItem(long itemId) {
         while (true) {
-            printItemDetails(item, owner);
+            ItemDetails details = itemService.getDetails(itemId);
+            Item item = details.item();
 
-            System.out.println();
+            printItemDetails(details);
 
-            if (item.status() == ItemStatus.AVAILABLE || item.status() == ItemStatus.RENTED) {
-                System.out.println("1) Delist");
-            } else {
-                System.out.println("1) Relist");
-            }
+            boolean unlisted = item.status() == ItemStatus.UNLISTED;
+            io.println();
+            io.println(unlisted ? "1) Relist" : "1) Delist");
+            io.println("2) Back to list");
 
-            System.out.println("2) Back to list");
-            System.out.print("> ");
-
-            String choice = input.nextLine().trim();
-
+            String choice = io.readLine("> ");
             if (choice.equals("2") || choice.equalsIgnoreCase("B")) {
                 return;
             }
-
             if (!choice.equals("1")) {
-                System.out.println("Invalid option.");
+                io.println("Invalid option.");
                 continue;
             }
 
-            item = changeItemStatus(item);
-        }
-    }
-
-    //    Prints the detailed information for a single inventory item.
-    private void printItemDetails(Item item, User owner) {
-        System.out.println();
-        System.out.println("=== " + item.name() + " ===");
-        System.out.println("description    " + item.description());
-        System.out.println("cost per day   " + item.costPerDay());
-        System.out.println("status         " + item.status().name().toLowerCase());
-        System.out.println("owner          " + owner.username());
-        System.out.println("listing date   " + item.createdAt());
-    }
-
-    //    Requests the appropriate status change from the service layer and returns the updated item for display.
-    private Item changeItemStatus(Item item) {
-        try {
-            if (item.status() == ItemStatus.AVAILABLE || item.status() == ItemStatus.RENTED) {
-                Item delistedItem = itemService.delist(item.id());
-
-                System.out.println("Item delisted.");
-                return delistedItem;
-            }
-
-            // ItemStatus has no other value than UNLISTED left at this point.
-            Item relistedItem = itemService.relist(item.id());
-
-            System.out.println("Item relisted.");
-            return relistedItem;
-
-        } catch (BusinessRuleException e) {
-            System.out.println(e.getMessage());
-            return item;
-        }
-    }
-
-    //    Displays the owner's available items with pagination and lets them select an item to start a rental.
-    private void recordRental(User owner) {
-        List<Item> items = itemService.getAvailableItems(owner.id());
-
-        if (items.isEmpty()) {
-            System.out.println();
-            System.out.println("No available items.");
-            return;
-        }
-
-        int page = 0;
-
-        while (true) {
-            int start = page * PAGE_SIZE;
-            int end = Math.min(
-                    start + PAGE_SIZE,
-                    items.size()
-            );
-
-            printRentalItemPage(items, start, end);
-
-            String choice = readPaginationChoice(
-                    page,
-                    end,
-                    items.size()
-            );
-
-            if (choice.equals("B")) {
-                return;
-            }
-
-            if (choice.equals("N") && end < items.size()) {
-                page++;
-                continue;
-            }
-
-            if (choice.equals("P") && page > 0) {
-                page--;
-                continue;
-            }
-
-            Integer selected = parseSelection(choice);
-
-            if (selected != null
-                    && selected >= 1
-                    && selected <= end - start) {
-
-                Item item = items.get(start + selected - 1);
-
-                createRental(item);
-                return;
-            }
-
-            System.out.println("Invalid option.");
-        }
-    }
-
-    //   Displays one page of items that are currently available for rental.
-    private void printRentalItemPage(
-            List<Item> items,
-            int start,
-            int end) {
-
-        System.out.println();
-        System.out.println("=== Record a rental ===");
-
-        for (int i = start; i < end; i++) {
-            Item item = items.get(i);
-
-            System.out.printf(
-                    "%d) %s - %.2f/day%n",
-                    i - start + 1,
-                    item.name(),
-                    item.costPerDay()
-            );
-        }
-    }
-
-    //    Collects renter's name and rental duration details, then asks the rental service to create the rental.
-    private void createRental(Item item) {
-        System.out.print("Renter username: ");
-        String renterUsername = input.nextLine().trim();
-
-        System.out.print("Duration in days: ");
-
-        int durationDays;
-
-        try {
-            durationDays = Integer.parseInt(input.nextLine().trim());
-
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid duration.");
-            return;
-        }
-
-        try {
-            Rental rental = rentalService.recordRental(
-                    item.id(),
-                    renterUsername,
-                    durationDays
-            );
-
-            System.out.println();
-            System.out.println("Rental recorded successfully.");
-            System.out.println("Rental ID: " + rental.id());
-            System.out.println("Ends: " + rental.endTime());
-
-        } catch (BusinessRuleException e) {
-            System.out.println(e.getMessage());
-        }
-    }
-
-    //   Displays the owner's active rentals with pagination and lets them select a rental to view and confirm its return.
-    private void confirmReturn(User owner) {
-
-        List<RentalDetails> rentals = rentalService.getActiveRentals(owner.id());
-
-        if (rentals.isEmpty()) {
-            System.out.println();
-            System.out.println("No active rentals.");
-            return;
-        }
-
-        int page = 0;
-
-        while (true) {
-            int start = page * PAGE_SIZE;
-            int end = Math.min(
-                    start + PAGE_SIZE,
-                    rentals.size()
-            );
-
-            printRentalReturnPage(rentals, start, end);
-
-            String choice = readPaginationChoice(
-                    page,
-                    end,
-                    rentals.size()
-            );
-
-            if (choice.equals("B")) {
-                return;
-            }
-
-            if (choice.equals("N") && end < rentals.size()) {
-                page++;
-                continue;
-            }
-
-            if (choice.equals("P") && page > 0) {
-                page--;
-                continue;
-            }
-
-            Integer selected = parseSelection(choice);
-
-            if (selected != null
-                    && selected >= 1
-                    && selected <= end - start) {
-
-                RentalDetails rentalDetails = rentals.get(start + selected - 1);
-
-                showRentalDetails(rentalDetails);
-
-                // Refresh after a possible return so closed rentals disappear.
-                rentals = rentalService.getActiveRentals(owner.id());
-
-                if (rentals.isEmpty()) {
-                    return;
+            // Ownership and the relist guard are enforced by the service; show its message and stay on screen.
+            guarded(() -> {
+                if (unlisted) {
+                    itemService.relist(itemId, session.userId());
+                    io.println("Item relisted.");
+                } else {
+                    itemService.delist(itemId, session.userId());
+                    io.println("Item delisted.");
                 }
+            });
+        }
+    }
 
-                if (page * PAGE_SIZE >= rentals.size()) {
-                    page = Math.max(0, (rentals.size() - 1) / PAGE_SIZE);
-                }
+    // ----------------------------------------------------- browse and rent--------------------------------------------
 
-                continue;
+    private void browseListings() {
+        while (true) {
+            List<Item> listings = marketplaceListings();
+            if (listings.isEmpty()) {
+                io.println();
+                io.println("No listings from other users are available.");
+                return;
             }
 
-            System.out.println("Invalid option.");
+            Optional<Item> selected = listScreen.select(
+                    "Browse listings", listings, item -> item.name() + " - " + item.costPerDay().toPlainString() + "/day");
+            if (selected.isEmpty()) {
+                return;
+            }
+            showListing(selected.get().id());
+        }
+    }
+//TODO after the repo exposes the browse listings method,call it here
+    private List<Item> marketplaceListings() {
+        return List.of();
+    }
+
+    private void showListing(long itemId) {
+        ItemDetails details = itemService.getDetails(itemId);
+        printItemDetails(details);
+
+        io.println();
+        io.println("1) Rent this item");
+        io.println("2) Back to list");
+
+        String choice = io.readLine("> ");
+        if (choice.equals("1")) {
+            rent(itemId);
+        } else if (!choice.equals("2") && !choice.equalsIgnoreCase("B")) {
+            io.println("Invalid option.");
         }
     }
 
-    //    Displays one page of active rentals with the item and renter names.
-    private void printRentalReturnPage(
-            List<RentalDetails> rentals,
-            int start,
-            int end) {
+    private void rent(long itemId) {
+        Optional<Integer> days = readInt("Duration in days: ");
+        if (days.isEmpty()) {
+            io.println("Invalid duration.");
+            return;
+        }
 
-        System.out.println();
-        System.out.println("=== Confirm a return ===");
+        // The renter is the logged-in user. Self-rental, availability and duration rules live in RentalService.
+        Rental rental = rentalService.recordRental(itemId, session.userId(), days.get());
+        io.println();
+        io.println("Rental recorded successfully.");
+        io.println("Rental ID: " + rental.id());
+        io.println("Ends: " + formatTime(rental.endTime()));
+    }
 
-        for (int i = start; i < end; i++) {
-            RentalDetails rentalDetails = rentals.get(i);
+    // ---------------------------------------------------- confirm a return--------------------------------------------
 
-            System.out.printf(
-                    "%d) %s - %s%n",
-                    i - start + 1,
-                    rentalDetails.itemName(),
-                    rentalDetails.renterUsername()
-            );
+    private void confirmReturn() {
+        while (true) {
+            List<RentalDetails> rentals = rentalService.getActiveRentals(session.userId());
+            if (rentals.isEmpty()) {
+                io.println();
+                io.println("No active rentals.");
+                return;
+            }
+
+            Optional<RentalDetails> selected = listScreen.select(
+                    "Confirm a return", rentals,
+                    r -> r.itemName() + " - " + r.renterUsername() + " (due " + formatTime(r.rental().endTime()) + ")");
+            if (selected.isEmpty()) {
+                return;
+            }
+            showRental(selected.get());
         }
     }
 
-    //    Displays an active rental's details and allows the owner to confirm the return or go back to the rental list.
-    private void showRentalDetails(RentalDetails rentalDetails) {
-        Rental rental = rentalDetails.rental();
+    private void showRental(RentalDetails details) {
+        Rental rental = details.rental();
 
         while (true) {
-            printRentalDetails(rentalDetails);
+            io.println();
+            io.println("=== Rental " + rental.id() + " ===");
+            io.println("item           " + details.itemName());
+            io.println("renter         " + details.renterUsername());
+            io.println("start time     " + formatTime(rental.startTime()));
+            io.println("end time       " + formatTime(rental.endTime()));
+            io.println("status         " + statusText(rental.status()));
 
-            System.out.println();
+            io.println();
+            io.println("1) Confirm return");
+            io.println("2) Back to list");
 
-            // The list this screen is opened from only holds ACTIVE rentals.
-            System.out.println("1) Confirm return");
-
-            System.out.println("2) Back to list");
-            System.out.print("> ");
-
-            String choice = input.nextLine().trim();
-
+            String choice = io.readLine("> ");
             if (choice.equals("2") || choice.equalsIgnoreCase("B")) {
                 return;
             }
-
-            if (choice.equals("1")) {
-
-                try {
-                    rentalService.confirmReturn(rental.id());
-                    System.out.println("Return confirmed successfully.");
-                    return;
-
-                } catch (BusinessRuleException e) {
-                    System.out.println(e.getMessage());
-                }
-
+            if (!choice.equals("1")) {
+                io.println("Invalid option.");
                 continue;
             }
 
-            System.out.println("Invalid option.");
+            boolean[] confirmed = {false};
+            guarded(() -> {
+                rentalService.confirmReturn(rental.id(), session.userId());
+                io.println("Return confirmed successfully.");
+                confirmed[0] = true;
+            });
+            if (confirmed[0]) {
+                return; // the list reloads without the closed rental
+            }
         }
     }
 
-    //    Prints the details of a rental selected from the active rental list.
-    private void printRentalDetails(RentalDetails rentalDetails) {
+    // ---------------------------------------------------- shared helpers---------------------------------------------
 
-        Rental rental = rentalDetails.rental();
-
-        System.out.println();
-        System.out.println("=== Rental " + rental.id() + " ===");
-        System.out.println("item           " + rentalDetails.itemName());
-        System.out.println("renter         " + rentalDetails.renterUsername());
-        System.out.println("start time     " + rental.startTime());
-        System.out.println("end time       " + rental.endTime());
-        System.out.println("status         " + rental.status().name().toLowerCase());
+    private void printItemDetails(ItemDetails details) {
+        Item item = details.item();
+        io.println();
+        io.println("=== " + item.name() + " ===");
+        io.println("description    " + nullToDash(item.description()));
+        io.println("cost per day   " + item.costPerDay().toPlainString());
+        io.println("status         " + statusText(item.status()));
+        io.println("owner          " + details.ownerUsername());
+        io.println("listed         " + formatTime(item.createdAt()));
     }
 
-    //    Displays pagination options and reads the user's selection.
-    private String readPaginationChoice(int page,
-                                        int end,
-                                        int totalItems) {
 
-        printPaginationOptions(page, end, totalItems);
-
-        return input.nextLine()
-                .trim()
-                .toUpperCase();
-    }
-
-    //    Displays only the pagination controls that are valid for the current page.
-    private void printPaginationOptions(
-            int page,
-            int end,
-            int totalItems) {
-
-        System.out.println();
-        System.out.println("B) Back to menu");
-
-        if (page > 0) {
-            System.out.println("P) Previous page");
-        }
-
-        if (end < totalItems) {
-            System.out.println("N) Next page");
-        }
-
-        System.out.print("> ");
-    }
-
-    //    Converts a user's numeric menu selection into an Integer, returning null when the input is not a valid number.
-    private Integer parseSelection(String choice) {
+    private void guarded(Runnable action) {
         try {
-            return Integer.parseInt(choice);
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid number.");
-            return null;
+            action.run();
+        } catch (InputClosedException e) {
+            throw e; // not an error: unwinds to run()
+        } catch (BusinessRuleException e) {
+            io.println(e.getMessage());
+        } catch (NotFoundException e) {
+            // TODO(logging): log e once structured logging exists.
+            io.println("That record no longer exists.");
+        } catch (DatabaseException e) {
+            // TODO(logging): log e once structured logging exists.
+            io.println("Something went wrong while accessing your data. Please try again.");
         }
+    }
+
+    private Optional<Integer> readInt(String prompt) {
+        try {
+            return Optional.of(Integer.parseInt(io.readLine(prompt)));
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<BigDecimal> readDecimal(String prompt) {
+        try {
+            return Optional.of(new BigDecimal(io.readLine(prompt)));
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+    }
+
+    private static String statusText(Enum<?> status) {
+        return status.name().toLowerCase();
+    }
+
+    private static String formatTime(LocalDateTime time) {
+        return time == null ? "-" : DISPLAY_TIME.format(time);
+    }
+
+    private static String nullToDash(String text) {
+        return text == null || text.isBlank() ? "-" : text;
     }
 }
