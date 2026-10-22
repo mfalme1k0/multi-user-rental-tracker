@@ -232,19 +232,10 @@ public class SQLiteItemRepository implements ItemRepository {
         if (pageSize < 1) {
             throw new IllegalArgumentException("Page size must be at least 1");
         }
-
         String sql = """
-            SELECT
-                id,
-                owner_id,
-                name,
-                description,
-                cost_per_day,
-                status,
-                created_at
+            SELECT id, owner_id, name, description, cost_per_day, status, created_at
             FROM listed_items
-            WHERE status = ?
-              AND owner_id <> ?
+            WHERE status = ? AND owner_id <> ?
             ORDER BY id ASC
             LIMIT ? OFFSET ?
             """;
@@ -254,14 +245,12 @@ public class SQLiteItemRepository implements ItemRepository {
             statement.setLong(2, excludedOwnerId);
             statement.setInt(3, pageSize + 1);
             statement.setLong(4, (long) pageNumber * pageSize);
-
             List<Item> items = new ArrayList<>();
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     items.add(mapItem(resultSet));
                 }
             }
-
             boolean hasNext = items.size() > pageSize;
             if (hasNext) {
                 items.remove(items.size() - 1);
@@ -279,8 +268,7 @@ public class SQLiteItemRepository implements ItemRepository {
         String sql = """
             UPDATE listed_items
             SET status = ?
-            WHERE id = ?
-              AND status = ?
+            WHERE id = ? AND status = ?
             """;
         Connection connection = databaseManager.getConnection();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
