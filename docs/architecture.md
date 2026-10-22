@@ -77,12 +77,12 @@ All team members are responsible for writing tests for the sections they work on
 
 ```mermaid
 stateDiagram-v2
-  [*] --> AVAILABLE: List item
-  AVAILABLE --> RENTED: Record rental
-  RENTED --> AVAILABLE: Confirm return
-  AVAILABLE --> UNLISTED: Delist
-  RENTED --> UNLISTED: Delist while rented
-  UNLISTED --> AVAILABLE: Relist when no active rental
+    [*] --> AVAILABLE: List item
+    AVAILABLE --> RENTED: Record rental
+    RENTED --> AVAILABLE: Confirm return
+    AVAILABLE --> UNLISTED: Delist
+    RENTED --> UNLISTED: Delist while rented
+    UNLISTED --> AVAILABLE: Relist when no active rental
 ```
 
 Implemented in `ItemStatus` (`canTransitionTo` / `transitionTo`). The 3 × 3 transition matrix is tested by `ItemStatusTest`.
@@ -198,7 +198,7 @@ A rejected input produces a readable user-facing message. Internal context, incl
 | D9 | Store timestamps as UTC ISO-8601 text `yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`; use `LocalDateTime` in the domain and format for display in Transport. | One UTC representation keeps timestamps consistent and comparisons predictable. |
 | D10 | No static singletons; constructor injection is wired in `Main`. `DatabaseManager` takes a `Path` and owns connection creation/configuration, not a persistent application-wide connection. | Tests can construct the app against a temporary database. Normal operations own a connection for their duration; an active transaction shares one connection across participating repositories and closes it at commit or rollback. |
 | D11 | Console I/O is injected (`ConsoleInput` reads an `InputStream`; menus write to a `PrintStream`). | Injected I/O supports deterministic tests and coverage. ArchUnit forbids `System.in/out/err` outside Transport and `Main`. |
-| D12 | Pagination is applied by repositories with stable ordering, `LIMIT`, `OFFSET`, and one look-ahead row; Transport owns navigation and rendering. | The team agreed to scale from the early stages. Database-level paging bounds memory use and keeps data filtering close to SQLite without requiring a separate count query. |
+| D12 | Pagination is applied by repositories with stable ordering, `LIMIT`, `OFFSET`, and one look-ahead row; Transport owns navigation and rendering. | The team agreed to scale from the early stages. Database-level paging bounds memory use and keeps filtering close to SQLite without requiring a separate count query. |
 | D13 | Every account can own items and rent other users' items. | Each account can own items and rent items owned by other users. |
 | D14 | Coverage gate is opt-in (`mvn verify -Pcoverage-gate`). | The report is produced during testing, while the gate can be enabled explicitly. The team must verify all new service methods and existing tests before delivery. |
 | D15 | No self-rental. The renter must differ from the item's owner. | Owners cannot rent their own items. `RentalService` compares stable user IDs. |
@@ -212,6 +212,7 @@ A rejected input produces a readable user-facing message. Internal context, incl
 | D23 | Recoverable operation failures return control to the menu with a readable message; unrecoverable startup failures are logged and terminate the application. | Users can recover from invalid input and business-rule failures, while an unusable database must not lead to continued operation in an invalid state. |
 | D24 | Database resources are closed on success and failure. | Exceptions must not leave connections or transactions dangling. |
 | D25 | Docker runs the application with SQLite stored on a mounted persistent volume. | Container replacement, rebuilding, and restarting must not erase application data. |
+| D26 | Structured events are persisted in `application_logs` with timestamp, level, event name, JSON context, and optional user ID. | Console logging supports live diagnostics, while a bounded database record provides an auditable operational history that survives process and container restarts. Passwords and password hashes are excluded by the logging contract. |
 
 ## 8. Rules for the database layer
 
@@ -227,14 +228,12 @@ The database schema remains in `schema.sql` and is initialised through `Database
 - Foreign keys use `ON DELETE RESTRICT`.
 - Usernames have a uniqueness constraint.
 - The users table stores a password hash, never a plaintext password.
+- `application_logs` stores structured events in `occurred_at`, `level`, `event_name`, `context_json`, and nullable `user_id` columns.
+- Log levels are restricted to `TRACE`, `DEBUG`, `INFO`, `WARN`, and `ERROR`.
+- Log context is stored as JSON text; the application must never place passwords or password hashes in it.
+- Log rows are indexed by occurrence time and level for bounded operational queries.
 - Item ownership is represented by `listed_items.owner_id`.
 - Rentals reference their item and renter through foreign keys.
-- Marketplace browsing uses a repository-level page query: available items exclude the requesting user's owner ID,
-  use stable `id ASC` ordering, and return a look-ahead row to calculate `hasNext`.
-- Rental claiming uses a conditional repository update from `AVAILABLE` to `RENTED`; the Service layer must perform it
-  inside the same transaction as rental insertion and handle a false result as a recoverable already-rented case.
-- Legacy databases without valid password hashes are reset explicitly to the current schema; they are not represented by
-  empty credentials.
 - `DatabaseManager` uses a per-call connection and a `ThreadLocal` transaction connection. This is sufficient for the
   current single-threaded CLI, which serves users sequentially rather than concurrently. If the application becomes
   a concurrent server, transaction context must be redesigned and re-reviewed before that deployment model is used.
