@@ -6,10 +6,9 @@ import com.rentaltracker.domain.ItemStatus;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Persistence contract for items. There is no delete: items are soft-removed through the UNLISTED status.
- * List methods return an empty list, never null.
- */
+// Persistence contract for items. There is no delete: items are soft-removed through the UNLISTED status.
+// List methods return an empty list, never null.
+
 public interface ItemRepository {
 
     Item insert(Item item);
@@ -21,7 +20,7 @@ public interface ItemRepository {
     //  Every item the owner has, in any status, oldest first (the inventory screen).
     List<Item> findByOwnerId(long ownerId);
 
-    //  The owner's items in one status, oldest first (e.g. AVAILABLE for the "record a rental" list).
+    //  The owner's items in one status, oldest first.
     List<Item> findByOwnerIdAndStatus(long ownerId, ItemStatus status);
 
     //  Available listings owned by somebody other than the supplied user, using database-level paging.

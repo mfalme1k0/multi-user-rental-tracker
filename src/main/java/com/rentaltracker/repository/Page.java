@@ -3,7 +3,7 @@ package com.rentaltracker.repository;
 import java.util.List;
 import java.util.Objects;
 
-/** A bounded repository result with enough metadata for caller-side navigation. */
+// A bounded repository result with enough metadata for caller-side navigation.
 public record Page<T>(List<T> items, int pageNumber, int pageSize, boolean hasNext) {
 
     public Page {
