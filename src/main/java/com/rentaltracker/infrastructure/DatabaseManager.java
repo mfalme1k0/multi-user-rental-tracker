@@ -15,7 +15,7 @@ import java.sql.Statement;
 
 public final class DatabaseManager {
 
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
 
     private final Path databasePath;
     private final ConnectionFactory connectionFactory;
@@ -150,7 +150,7 @@ public final class DatabaseManager {
             try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate(schema);
             }
-            migrate(connection);
+            migrate(connection, schema);
         } catch (IOException | SQLException e) {
             throw new DatabaseConnectionException("Could not initialize database", e);
         }
@@ -201,24 +201,34 @@ public final class DatabaseManager {
         }
     }
 
-    private void migrate(Connection connection) throws SQLException {
+    private void migrate(Connection connection, String schema) throws SQLException {
         int version;
         try (Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("PRAGMA user_version")) {
             version = resultSet.getInt(1);
         }
         if (version < SCHEMA_VERSION) {
-            upgrade(connection);
+            upgrade(connection, schema);
         }
     }
 
-    private void upgrade(Connection connection) throws SQLException {
+    private void upgrade(Connection connection, String schema) throws SQLException {
         try (Statement statement = connection.createStatement()) {
-            if (usersTableIsCaseSensitive(statement) || !usersTableHasPassword(statement)) {
-                rebuildUsersTable(connection, statement);
+            if (legacyUsersNeedReset(statement)) {
+                resetLegacyDatabase(connection, statement, schema);
             } else {
                 statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
             }
+        }
+    }
+
+    private boolean legacyUsersNeedReset(Statement statement) throws SQLException {
+        if (!usersTableHasPassword(statement)) {
+            return true;
+        }
+        try (ResultSet resultSet = statement.executeQuery(
+                "SELECT 1 FROM users WHERE password IS NULL OR trim(password) = '' LIMIT 1")) {
+            return resultSet.next();
         }
     }
 
@@ -248,20 +258,8 @@ public final class DatabaseManager {
         }
     }
 
-    private void rebuildUsersTable(Connection connection, Statement statement) throws SQLException {
-        // Detect case-only duplicates first
-        try (ResultSet rs = statement.executeQuery(
-                "SELECT lower(username), group_concat(id) FROM users "
-                        + "GROUP BY lower(username) HAVING count(*) > 1")) {
-            if (rs.next()) {
-                throw new SQLException(
-                        "Cannot migrate: usernames differing only by case: "
-                                + rs.getString(1)
-                                + " (ids " + rs.getString(2) + "). Merge them first."
-                );
-            }
-        }
-
+    private void resetLegacyDatabase(Connection connection, Statement statement, String schema)
+            throws SQLException {
         Throwable failure = null;
         boolean transactionStarted = false;
         boolean rollbackFailed = false;
@@ -272,31 +270,12 @@ public final class DatabaseManager {
             connection.setAutoCommit(false);
             transactionStarted = true;
 
-            statement.execute("""
-                    CREATE TABLE users_new (
-                        id INTEGER PRIMARY KEY,
-                        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                        password TEXT NOT NULL DEFAULT '',
-                        created_at TEXT NOT NULL DEFAULT (
-                            strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                        )
-                    )
-                    """);
-
-            String passwordExpression = usersTableHasPassword(statement)
-                    ? "password"
-                    : "''";
-            statement.execute("INSERT INTO users_new (id, username, password, created_at) "
-                    + "SELECT id, username, " + passwordExpression + ", created_at FROM users");
-
-            statement.execute("DROP TABLE users");
-            statement.execute("ALTER TABLE users_new RENAME TO users");
-
-            try (ResultSet rs = statement.executeQuery("PRAGMA foreign_key_check")) {
-                if (rs.next()) {
-                    throw new SQLException("Migration left dangling foreign keys");
-                }
-            }
+            // Legacy accounts cannot be safely associated with real credentials. Drop all
+            // application data together and recreate the schema instead of leaving unusable users.
+            statement.execute("DROP TABLE IF EXISTS rentals");
+            statement.execute("DROP TABLE IF EXISTS listed_items");
+            statement.execute("DROP TABLE IF EXISTS users");
+            statement.executeUpdate(schema);
 
             statement.execute("PRAGMA user_version = " + SCHEMA_VERSION);
             connection.commit();
