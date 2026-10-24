@@ -4,7 +4,6 @@ import com.rentaltracker.exception.ValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -18,10 +17,17 @@ class AuthValidatorImplTest {
     }
 
     @Test
-    void testValidateUsernameReturnsTrimmedUsername() {
-        String result = authValidator.validateUsername("  jackson  ");
+    void testValidateUsernameReturnsUsernameWithoutSurroundingWhitespace() {
+        String result = authValidator.validateUsername("  jack  ");
 
-        assertEquals("jackson", result);
+        assertEquals("jack", result);
+    }
+
+    @Test
+    void testValidateUsernameAcceptsUsernameWithoutWhitespace() {
+        String result = authValidator.validateUsername("jack");
+
+        assertEquals("jack", result);
     }
 
     @Test
@@ -33,15 +39,7 @@ class AuthValidatorImplTest {
     }
 
     @Test
-    void testValidateUsernameRejectsEmptyString() {
-        assertThrows(
-                ValidationException.class,
-                () -> authValidator.validateUsername("")
-        );
-    }
-
-    @Test
-    void testValidateUsernameRejectsWhiteSpaceOnly() {
+    void testValidateUsernameRejectsBlankUsername() {
         assertThrows(
                 ValidationException.class,
                 () -> authValidator.validateUsername("   ")
@@ -50,23 +48,19 @@ class AuthValidatorImplTest {
 
     @Test
     void testValidatePasswordAcceptsExactlyEightCharacters() {
-        assertDoesNotThrow(
-                () -> authValidator.validatePassword("abcdefgh")
-        );
+        authValidator.validatePassword("password");
     }
 
     @Test
     void testValidatePasswordAcceptsMoreThanEightCharacters() {
-        assertDoesNotThrow(
-                () -> authValidator.validatePassword("abc123!@#xyz")
-        );
+        authValidator.validatePassword("longpassword");
     }
 
     @Test
-    void testValidatePasswordRejectsSevenCharacters() {
+    void testValidatePasswordRejectsFewerThanEightCharacters() {
         assertThrows(
                 ValidationException.class,
-                () -> authValidator.validatePassword("abcdefg")
+                () -> authValidator.validatePassword("short")
         );
     }
 

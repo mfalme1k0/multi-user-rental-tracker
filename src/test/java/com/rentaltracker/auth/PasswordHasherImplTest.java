@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PasswordHasherImplTest {
+
     private PasswordHasherImpl passwordHasher;
 
     @BeforeEach
@@ -14,32 +15,68 @@ class PasswordHasherImplTest {
     }
 
     @Test
-    void testHashPasswordReturnsHashInsteadOfOriginalPassword() {
-        String password = "SecurePass123";
+    void testHashPasswordReturnsNonNullHash() {
+        String hash = passwordHasher.hashPassword("password123");
 
-        String passwordHash = passwordHasher.hashPassword(password);
+        assertNotNull(hash);
+        assertFalse(hash.isBlank());
+    }
 
-        assertNotNull(passwordHash);
-        assertNotEquals(password, passwordHash);
+    @Test
+    void testHashPasswordDoesNotReturnPlaintextPassword() {
+        String password = "password123";
+
+        String hash = passwordHasher.hashPassword(password);
+
+        assertNotEquals(password, hash);
+    }
+
+    @Test
+    void testHashPasswordGeneratesDifferentHashesForSamePassword() {
+        String firstHash = passwordHasher.hashPassword("password123");
+        String secondHash = passwordHasher.hashPassword("password123");
+
+        assertNotEquals(firstHash, secondHash);
     }
 
     @Test
     void testMatchesReturnsTrueForCorrectPassword() {
-        String password = "SecurePass123";
-        String passwordHash = passwordHasher.hashPassword(password);
+        String password = "password123";
+        String hash = passwordHasher.hashPassword(password);
 
-        boolean matches = passwordHasher.matches(password, passwordHash);
-
-        assertTrue(matches);
+        assertTrue(passwordHasher.matches(password, hash));
     }
 
     @Test
     void testMatchesReturnsFalseForIncorrectPassword() {
-        String passwordHash = passwordHasher.hashPassword("SecurePass123");
+        String hash = passwordHasher.hashPassword("password123");
 
-        boolean matches = passwordHasher.matches("WrongPass123", passwordHash);
-
-        assertFalse(matches);
+        assertFalse(passwordHasher.matches("wrongpassword", hash));
     }
 
+    @Test
+    void testHashPasswordRejectsNull() {
+        assertThrows(
+                NullPointerException.class,
+                () -> passwordHasher.hashPassword(null)
+        );
+    }
+
+    @Test
+    void testMatchesRejectsNullPassword() {
+        String hash = passwordHasher.hashPassword("password123");
+
+        assertThrows(
+                NullPointerException.class,
+                () -> passwordHasher.matches(null, hash)
+        );
+    }
+
+    @Test
+    void testMatchesRejectsNullPasswordHash() {
+        assertThrows(
+                NullPointerException.class,
+                () -> passwordHasher.matches("password123", null)
+        );
+    }
 }
