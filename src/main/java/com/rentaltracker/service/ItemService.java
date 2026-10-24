@@ -3,6 +3,7 @@ package com.rentaltracker.service;
 import com.rentaltracker.domain.*;
 import com.rentaltracker.exception.BusinessRuleException;
 import com.rentaltracker.repository.ItemRepository;
+import com.rentaltracker.repository.Page;
 import com.rentaltracker.repository.RentalRepository;
 import com.rentaltracker.repository.Transactor;
 
@@ -78,11 +79,16 @@ public class ItemService {
         return new ItemDetails(item, ownerUsername);
     }
 
-    // TODO
-    // Available listings belonging to other users.
-//    public List<Item> getMarketplaceListings(long actingUserId) {
-//        return itemRepository.findAvailableExcludingOwner(actingUserId);
-//    }
+    // Returns a page of available listings owned by other users.
+    // The current user's own listings and unavailable items are excluded.
+    public Page<Item> getMarketplaceListings(
+            long actingUserId, int pageNumber, int pageSize) {
+
+        // Verify that the acting user exists before querying the marketplace.
+        userService.getUserById(actingUserId);
+
+        return itemRepository.findAvailableExcludingOwner(actingUserId, pageNumber, pageSize);
+    }
 
     // Removes an item from the available listings by transitioning it to UNLISTED.
     // An active rental is not canceled if the item is delisted while rented.

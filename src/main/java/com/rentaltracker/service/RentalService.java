@@ -55,8 +55,16 @@ public class RentalService {
                         "The owner of an item cannot rent their own item");
             }
 
-            Item rentedItem = item.transitionTo(ItemStatus.RENTED);
-            itemRepository.updateStatus(itemId, rentedItem.status());
+            // Validate the item's current state before attempting to rent it.
+            item.transitionTo(ItemStatus.RENTED);
+
+            // Change the status only if the item is still AVAILABLE.
+            // This guards against renting an item that has already been taken.
+            boolean markedRented = itemRepository.markRentedIfAvailable(itemId);
+
+            if (!markedRented) {
+                throw new BusinessRuleException("This item is no longer available for rent");
+            }
 
             LocalDateTime start = LocalDateTime.now(clock);
             LocalDateTime end = start.plusDays(validDays);
