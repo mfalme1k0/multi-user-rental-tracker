@@ -1,72 +1,59 @@
 package com.rentaltracker.service;
 
 import com.rentaltracker.domain.User;
-import com.rentaltracker.exception.ValidationException;
-import com.rentaltracker.infrastructure.DatabaseManager;
-import com.rentaltracker.repository.sqlite.SQLiteUserRepository;
+import com.rentaltracker.exception.NotFoundException;
+import com.rentaltracker.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.nio.file.Path;
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
-    @TempDir
-    Path tempDir;
+    private static final long USER_ID = 1L;
 
-    private UserService service;
+    @Mock
+    private UserRepository userRepository;
+
+    private UserService userService;
 
     @BeforeEach
     void setUp() {
-        DatabaseManager db = createDatabase();
-        service = new UserService(new SQLiteUserRepository(db));
+        userService = new UserService(userRepository);
     }
 
-//    @Test
-//    void findOwnerIsEmptyBeforeRegistration() {
-//        assertTrue(service.findOwner().isEmpty());
-//    }
+    @Test
+    void testGetUserByIdReturnsUserFromRepository() {
+        User expectedUser = org.mockito.Mockito.mock(User.class);
+        when(userRepository.getById(USER_ID)).thenReturn(expectedUser);
 
-//    @Test
-//    void registerOwnerSavesTheFirstUserAsOwner() {
-//        User owner = service.registerOwner("liisa");
-//        assertEquals(Optional.of(owner), service.findOwner());
-//    }
+        User result = userService.getUserById(USER_ID);
 
-//    @Test
-//    void registerOwnerRejectsBlankUsername() {
-//        assertThrows(ValidationException.class, () -> service.registerOwner("   "));
-//        assertThrows(ValidationException.class, () -> service.registerOwner(null));
-//    }
+        assertSame(expectedUser, result);
+        verify(userRepository).getById(USER_ID);
+        verifyNoMoreInteractions(userRepository);
+    }
 
-//    @Test
-//    void findOrCreateRenterReusesAnExistingAccount() {
-//        User first = service.findOrCreateRenter("meelis");
-//        User second = service.findOrCreateRenter("meelis");
-//        assertEquals(first.id(), second.id());
-//    }
-//
-//    @Test
-//    void findOrCreateRenterCreatesWhenAbsent() {
-//        User renter = service.findOrCreateRenter("uku");
-//        assertEquals("uku", renter.username());
-//    }
+    @Test
+    void testGetUserByIdPropagatesNotFoundException() {
+        NotFoundException exception = new NotFoundException("User not found");
+        when(userRepository.getById(USER_ID)).thenThrow(exception);
 
-//    @Test
-//    void findOrCreateRenterRejectsBlankName() {
-//        assertThrows(ValidationException.class, () -> service.findOrCreateRenter(" "));
-//    }
+        NotFoundException thrown = assertThrows(
+                NotFoundException.class,
+                () -> userService.getUserById(USER_ID)
+        );
 
-    private DatabaseManager createDatabase() {
-        Path database = tempDir.resolve("rental-tracker.db");
-        DatabaseManager databaseManager = new DatabaseManager(database);
-        databaseManager.initialize();
-        return databaseManager;
+        assertSame(exception, thrown);
+        verify(userRepository).getById(USER_ID);
+        verifyNoMoreInteractions(userRepository);
     }
 }

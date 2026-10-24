@@ -51,6 +51,29 @@ CREATE TABLE IF NOT EXISTS rentals (
     ON DELETE RESTRICT
     );
 
+CREATE TABLE IF NOT EXISTS application_logs (
+                                                id INTEGER PRIMARY KEY,
+                                                occurred_at TEXT NOT NULL,
+                                                level TEXT NOT NULL CHECK (
+                                                    level IN ('DEBUG', 'INFO', 'WARN', 'ERROR')
+                                                    ),
+                                                event_name TEXT NOT NULL,
+                                                context_json TEXT NOT NULL CHECK (
+                                                    json_valid(context_json)
+                                                    ),
+                                                user_id INTEGER,
+
+                                                FOREIGN KEY (user_id)
+                                                    REFERENCES users(id)
+                                                    ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_application_logs_occurred_at
+    ON application_logs(occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_application_logs_user_id
+    ON application_logs(user_id);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rentals_one_active_per_item
     ON rentals(item_id)
     WHERE status = 'active';

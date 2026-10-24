@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 // A listed item. Immutable: "changing" it returns a new instance.
-
 public record Item(
         Long id,
         Long ownerId,
