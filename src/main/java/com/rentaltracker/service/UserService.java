@@ -1,6 +1,7 @@
 package com.rentaltracker.service;
 
 import com.rentaltracker.domain.User;
+import com.rentaltracker.logging.AppLogger;
 import com.rentaltracker.repository.UserRepository;
 
 import java.util.Objects;

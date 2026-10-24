@@ -13,18 +13,25 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.StringJoiner;
+import java.util.*;
 
 // Writes human-readable log messages to a file and persists structured log events through LogRepository.
 // Logging failures are reported to stderr rather than propagated into normal application operations.
-public final class FileAppLogger implements AppLogger {
+public final class AppLoggerImpl implements AppLogger {
 
     // Defines the UTC timestamp format used in the log file.
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+    // Field names whose values must be redacted before logging.
+    private static final Set<String> SENSITIVE_FIELDS = Set.of(
+            "password",
+            "password_hash",
+            "passwordhash",
+            "passwordHash",
+            "current_password",
+            "new_password"
+    );
 
     private final Path logFile;
     private final LogRepository logRepository;
@@ -34,12 +41,11 @@ public final class FileAppLogger implements AppLogger {
     // Creates a logger using the configured file path and system UTC clock.
     // @param logRepository persists structured log events
     // @param objectMapper serializes event context as JSON
-    public FileAppLogger(
+    public AppLoggerImpl(
             LogRepository logRepository,
-            ObjectMapper objectMapper
-    ) {
-        this(
-                resolveLogFile(),
+            ObjectMapper objectMapper) {
+
+        this(resolveLogFile(),
                 logRepository,
                 objectMapper,
                 Clock.systemUTC()
@@ -51,17 +57,15 @@ public final class FileAppLogger implements AppLogger {
     // @param logRepository persists structured log events
     // @param objectMapper serializes event context
     // @param clock supplies timestamps
-    public FileAppLogger(
+    public AppLoggerImpl(
             Path logFile,
             LogRepository logRepository,
             ObjectMapper objectMapper,
             Clock clock
     ) {
         this.logFile = Objects.requireNonNull(logFile, "logFile");
-        this.logRepository =
-                Objects.requireNonNull(logRepository, "logRepository");
-        this.objectMapper =
-                Objects.requireNonNull(objectMapper, "objectMapper");
+        this.logRepository = Objects.requireNonNull(logRepository, "logRepository");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -125,15 +129,24 @@ public final class FileAppLogger implements AppLogger {
             String level,
             String event,
             Map<String, ?> context,
-            Throwable cause
-    ) {
-        Objects.requireNonNull(event, "event");
+            Throwable cause) {
 
-        // Copy the context so the original map is not modified.
+        if (event == null || event.isBlank()) {
+            reportLoggingFailure("Cannot write log event with a missing event name");
+            return;
+        }
+
+        // Copy the context without retaining known sensitive values.
         Map<String, Object> safeContext = new LinkedHashMap<>();
 
         if (context != null) {
             safeContext.putAll(context);
+        }
+
+        for (String field : SENSITIVE_FIELDS) {
+            if (safeContext.containsKey(field)) {
+                safeContext.put(field, "[REDACTED]");
+            }
         }
 
         // Use the supplied user ID as the authoritative actor identifier.
@@ -155,9 +168,7 @@ public final class FileAppLogger implements AppLogger {
         LocalDateTime occurredAt =
                 LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
 
-        String timestamp = occurredAt
-                .atOffset(ZoneOffset.UTC)
-                .format(TIMESTAMP_FORMAT);
+        String timestamp = TIMESTAMP_FORMAT.format(occurredAt.atOffset(ZoneOffset.UTC));
 
         // Serialize the structured context for database storage.
         String contextJson;
@@ -204,6 +215,7 @@ public final class FileAppLogger implements AppLogger {
                     .replace("\\", "\\\\")
                     .replace("\r", "\\r")
                     .replace("\n", "\\n")
+                    .replace("\t", "\\t")
                     .replace("|", "\\|");
 
             joiner.add(entry.getKey() + "=" + value);
@@ -211,6 +223,7 @@ public final class FileAppLogger implements AppLogger {
 
         return joiner.toString();
     }
+
 
     // Appends a formatted log line to the file, creating directories and the file when necessary.
     // @param line, complete formatted log line
@@ -257,7 +270,9 @@ public final class FileAppLogger implements AppLogger {
 
             logRepository.append(entry);
         } catch (RuntimeException exception) {
-            reportLoggingFailure("Could not persist log event: " + event);
+            reportLoggingFailure("Could not persist log event: " + event
+                            + " (" + exception.getClass().getSimpleName() + ")"
+            );
         }
     }
 
