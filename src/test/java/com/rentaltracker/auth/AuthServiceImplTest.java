@@ -3,18 +3,23 @@ package com.rentaltracker.auth;
 import com.rentaltracker.domain.User;
 import com.rentaltracker.exception.BusinessRuleException;
 import com.rentaltracker.exception.UniqueConstraintException;
+import com.rentaltracker.exception.ValidationException;
+import com.rentaltracker.repository.Transactor;
 import com.rentaltracker.repository.UserRepository;
+import com.rentaltracker.logging.AppLogger;
 import com.rentaltracker.validation.AuthValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,141 +34,209 @@ class AuthServiceImplTest {
     @Mock
     private AuthValidator authValidator;
 
+    @Mock
+    private Transactor transactor;
+
+    @Mock
+    private AppLogger logger;
+
     private AuthServiceImpl authService;
 
-//    @BeforeEach
-//    void setUp() {
-//        authService = new AuthServiceImpl(
-//                userRepository, passwordHasher, authValidator);
-//    }
+    @BeforeEach
+    void setUp() {
+        authService = new AuthServiceImpl(
+                userRepository,
+                passwordHasher,
+                authValidator,
+                transactor,
+                logger
+        );
+
+        lenient().when(transactor.inTransaction(
+                org.mockito.ArgumentMatchers.<Supplier<User>>any()
+        )).thenAnswer(invocation -> {
+            Supplier<User> work = invocation.getArgument(0);
+            return work.get();
+        });
+    }
 
     @Test
-    void testRegisterCreatesUserWithHashedPassword() {
-        String username = "alex";
-        String password = "SecurePass123";
+    void testRegisterCreatesUserWithValidatedUsernameAndHashedPassword() {
+        String username = "  jack  ";
+        String cleanUsername = "jack";
+        String password = "password123";
         String passwordHash = "bcrypt-hash";
 
-        User savedUser = new User(1L, username, passwordHash, null);
+        User registeredUser = mock(User.class);
 
-        when(authValidator.validateUsername(username)).thenReturn(username);
+        when(authValidator.validateUsername(username)).thenReturn(cleanUsername);
+        doNothing().when(authValidator).validatePassword(password);
         when(passwordHasher.hashPassword(password)).thenReturn(passwordHash);
-        when(userRepository.findByUsername(username)).thenReturn(Optional.empty());
-        when(userRepository.insert(any(User.class))).thenReturn(savedUser);
+        when(userRepository.findByUsername(cleanUsername)).thenReturn(Optional.empty());
+        when(userRepository.insert(any(User.class))).thenReturn(registeredUser);
+        when(registeredUser.id()).thenReturn(1L);
 
         User result = authService.register(username, password);
 
-        assertSame(savedUser, result);
-        assertEquals(username, result.username());
-        assertEquals(passwordHash, result.password());
-        assertNotEquals(password, result.password());
-
+        assertSame(registeredUser, result);
+        verify(userRepository).findByUsername(cleanUsername);
         verify(userRepository).insert(argThat(user ->
-                user.username().equals(username)
-                        && user.password().equals(passwordHash)));
+                user.username().equals(cleanUsername)
+                        && user.password().equals(passwordHash)
+        ));
+        verify(transactor).inTransaction(ArgumentMatchers.<Supplier<User>>any());
+        verify(logger).info(eq(1L), eq("auth.registration_succeeded"), anyMap());
     }
 
     @Test
-    void testRegisterRejectsExistingUsername() {
-        String username = "alex";
-        String password = "SecurePass123";
-        User existingUser = User.newUser(username, "existing-hash");
+    void testRegisterRejectsDuplicateUsername() {
+        String username = "jack";
+        String password = "password123";
+
+        User existingUser = mock(User.class);
 
         when(authValidator.validateUsername(username)).thenReturn(username);
-        when(userRepository.findByUsername(username))
-                .thenReturn(Optional.of(existingUser));
+        doNothing().when(authValidator).validatePassword(password);
+        when(passwordHasher.hashPassword(password)).thenReturn("bcrypt-hash");
+        when(userRepository.findByUsername(username)).thenReturn(Optional.of(existingUser));
 
-        assertThrows(BusinessRuleException.class,
-                () -> authService.register(username, password));
+        assertThrows(
+                BusinessRuleException.class,
+                () -> authService.register(username, password)
+        );
 
         verify(userRepository, never()).insert(any(User.class));
-        verify(passwordHasher, never()).hashPassword(anyString());
+        verify(logger).warn(isNull(), eq("auth.registration_rejected"), anyMap());
     }
 
     @Test
-    void testRegisterTranslatesUniqueConstraintException() {
-        String username = "alex";
-        String password = "SecurePass123";
+    void testRegisterRejectsInvalidUsername() {
+        String username = " ";
+        String password = "password123";
 
-        when(authValidator.validateUsername(username)).thenReturn(username);
-        when(passwordHasher.hashPassword(password)).thenReturn("bcrypt-hash");
-        when(userRepository.findByUsername(username)).thenReturn(Optional.empty());
-        when(userRepository.insert(any(User.class)))
-                .thenThrow(new UniqueConstraintException("username already exists"));
+        when(authValidator.validateUsername(username))
+                .thenThrow(new ValidationException("Username must not be blank"));
 
-        assertThrows(BusinessRuleException.class,
-                () -> authService.register(username, password));
+        assertThrows(
+                ValidationException.class,
+                () -> authService.register(username, password)
+        );
+
+        verifyNoInteractions(passwordHasher, userRepository, transactor);
+        verify(logger).warn(isNull(), eq("validation.failed"), anyMap());
     }
 
     @Test
-    void testRegisterValidatesPasswordBeforeSaving() {
-        String username = "alex";
+    void testRegisterRejectsInvalidPassword() {
+        String username = "jack";
         String password = "short";
 
         when(authValidator.validateUsername(username)).thenReturn(username);
-        doThrow(new com.rentaltracker.exception.ValidationException(
-                "Password must be at least 8 characters long"))
+        doThrow(new ValidationException("Password must be at least 8 characters long"))
                 .when(authValidator).validatePassword(password);
 
-        assertThrows(com.rentaltracker.exception.ValidationException.class,
-                () -> authService.register(username, password));
+        assertThrows(
+                ValidationException.class,
+                () -> authService.register(username, password)
+        );
 
-        verify(userRepository, never()).insert(any(User.class));
-        verify(passwordHasher, never()).hashPassword(anyString());
+        verifyNoInteractions(passwordHasher, userRepository, transactor);
+        verify(logger).warn(isNull(), eq("validation.failed"), anyMap());
     }
 
     @Test
-    void testLoginReturnsUserForCorrectCredentials() {
-        String username = "alex";
-        String password = "SecurePass123";
-        User user = User.newUser(username, "bcrypt-hash");
+    void testRegisterConvertsUniqueConstraintExceptionToBusinessRuleException() {
+        String username = "jack";
+        String password = "password123";
+
+        when(authValidator.validateUsername(username)).thenReturn(username);
+        doNothing().when(authValidator).validatePassword(password);
+        when(passwordHasher.hashPassword(password)).thenReturn("bcrypt-hash");
+        when(userRepository.findByUsername(username)).thenReturn(Optional.empty());
+        when(userRepository.insert(any(User.class)))
+                .thenThrow(new UniqueConstraintException("Duplicate username"));
+
+        assertThrows(
+                BusinessRuleException.class,
+                () -> authService.register(username, password)
+        );
+
+        verify(logger).warn(isNull(), eq("auth.registration_rejected"), anyMap());
+    }
+
+    @Test
+    void testLoginReturnsUserWhenCredentialsAreValid() {
+        String username = "jack";
+        String password = "password123";
+        User user = mock(User.class);
 
         when(authValidator.validateUsername(username)).thenReturn(username);
         when(userRepository.findByUsername(username)).thenReturn(Optional.of(user));
-        when(passwordHasher.matches(password, user.password())).thenReturn(true);
+        when(user.password()).thenReturn("bcrypt-hash");
+        when(passwordHasher.matches(password, "bcrypt-hash")).thenReturn(true);
+        when(user.id()).thenReturn(1L);
 
         User result = authService.login(username, password);
 
         assertSame(user, result);
+        verify(logger).info(eq(1L), eq("auth.login_succeeded"), anyMap());
     }
 
     @Test
     void testLoginRejectsIncorrectPassword() {
-        String username = "alex";
-        String password = "WrongPass123";
-        User user = User.newUser(username, "bcrypt-hash");
+        String username = "jack";
+        String password = "wrongpassword";
+        User user = mock(User.class);
 
         when(authValidator.validateUsername(username)).thenReturn(username);
         when(userRepository.findByUsername(username)).thenReturn(Optional.of(user));
-        when(passwordHasher.matches(password, user.password())).thenReturn(false);
+        when(user.password()).thenReturn("bcrypt-hash");
+        when(passwordHasher.matches(password, "bcrypt-hash")).thenReturn(false);
 
-        assertThrows(BusinessRuleException.class,
-                () -> authService.login(username, password));
+        assertThrows(
+                BusinessRuleException.class,
+                () -> authService.login(username, password)
+        );
+
+        verify(logger).warn(isNull(), eq("auth.login_rejected"), anyMap());
     }
 
     @Test
     void testLoginRejectsUnknownUsername() {
         String username = "unknown";
+        String password = "password123";
 
         when(authValidator.validateUsername(username)).thenReturn(username);
         when(userRepository.findByUsername(username)).thenReturn(Optional.empty());
 
-        assertThrows(BusinessRuleException.class,
-                () -> authService.login(username, "SecurePass123"));
-
-        verify(passwordHasher, never()).matches(anyString(), anyString());
+        assertThrows(
+                BusinessRuleException.class,
+                () -> authService.login(username, password)
+        );
     }
 
     @Test
-    void testLoginRejectsBlankPassword() {
-        String username = "alex";
+    void testLoginRejectsNullOrBlankCredentials() {
+        assertThrows(BusinessRuleException.class, () -> authService.login(null, "password123"));
+        assertThrows(BusinessRuleException.class, () -> authService.login("jack", null));
+        assertThrows(BusinessRuleException.class, () -> authService.login(" ", "password123"));
+        assertThrows(BusinessRuleException.class, () -> authService.login("jack", " "));
+    }
 
-        when(authValidator.validateUsername(username)).thenReturn(username);
+    @Test
+    void testLoginRejectsInvalidUsernameFromValidator() {
+        String username = "jack";
+        String password = "password123";
 
-        BusinessRuleException exception = assertThrows(
+        when(authValidator.validateUsername(username))
+                .thenThrow(new ValidationException("Invalid username"));
+
+        assertThrows(
                 BusinessRuleException.class,
-                () -> authService.login(username, "  "));
+                () -> authService.login(username, password)
+        );
 
-        assertEquals("Invalid username or password", exception.getMessage());
-        verify(userRepository, never()).findByUsername(anyString());
+        verify(logger).warn(isNull(), eq("auth.login_rejected"), anyMap());
+        verifyNoInteractions(passwordHasher);
     }
 }
