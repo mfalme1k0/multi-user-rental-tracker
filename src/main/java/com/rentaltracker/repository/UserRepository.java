@@ -10,23 +10,12 @@ import java.util.Optional;
  */
 public interface UserRepository {
 
-    /**
-     * @return the saved user with id and createdAt filled in.
-     * @throws com.rentaltracker.exception.UniqueConstraintException duplicate username
-     * @throws com.rentaltracker.exception.NotNullConstraintException missing username
-     */
+    // return the saved user with id and createdAt filled in.
     User insert(User user);
 
     Optional<User> findById(long id);
 
     Optional<User> findByUsername(String username);
-
-    /**
-     * The lowest-id user: by rule this is the app owner (created on first launch, before any renter exists).
-     * Empty means "first launch".
-     */
-    Optional<User> findFirst();
-
-    /** @throws com.rentaltracker.exception.NotFoundException when no row has this id */
     User getById(long id);
+    Optional<User> findFirst();
 }

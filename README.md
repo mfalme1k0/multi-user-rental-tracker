@@ -219,11 +219,12 @@ Document architectural decisions in `docs/architecture.md` and update them when 
 
 ## Database design
 
-The SQLite schema contains three main tables:
+The SQLite schema contains four main tables:
 
 - `users` — Unique usernames and password hashes.
 - `listed_items` — Items associated with their owners through `owner_id`.
 - `rentals` — Rental records associating items with their renters.
+- `application_logs` — Structured, non-sensitive operational events with timestamps, severity, event names, JSON context, and optional user IDs.
 
 The schema is initialized automatically when the database is created.
 
@@ -350,7 +351,7 @@ The completed project must include:
 - A JaCoCo coverage report.
 - A Dockerfile and persistent SQLite volume configuration.
 - Seed data containing at least two users and six listed items distributed across them.
-- An ER diagram showing all three tables, their columns, types, constraints, and relationships.
+- An ER diagram showing all four tables, their columns, types, constraints, and relationships.
 - Git history demonstrating teamwork through reviewed pull requests, focused commits, and clear commit messages.
 
 ## Project status

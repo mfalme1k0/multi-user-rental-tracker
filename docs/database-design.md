@@ -26,11 +26,12 @@ The database location is supplied to `DatabaseManager` as a `java.nio.file.Path`
 
 SQLite foreign-key enforcement is explicitly enabled for every database connection.
 
-The database contains three tables:
+The database contains four tables:
 
 - `users`
 - `listed_items`
 - `rentals`
+- `application_logs`
 
 The relationships represent users who own listed items, users who rent those items, and the rental history associated with each item.
 
@@ -381,6 +382,32 @@ The Java `RentalStatus` enum maps to these database values.
 
 ---
 
+## 5.1 `application_logs`
+
+`application_logs` stores non-sensitive structured operational events so validation failures, database failures, rental
+events, and startup/shutdown lifecycle events can be diagnosed after the process or container has restarted.
+
+| Column | SQLite type | Constraints | Purpose |
+|---|---|---|---|
+| `id` | `INTEGER` | `PRIMARY KEY` | Database-generated event identifier |
+| `occurred_at` | `TEXT` | `NOT NULL`, UTC default | Event timestamp |
+| `level` | `TEXT` | `NOT NULL`, `CHECK` | `TRACE`, `DEBUG`, `INFO`, `WARN`, or `ERROR` |
+| `event_name` | `TEXT` | `NOT NULL` | Stable event name such as `rental.created` |
+| `context_json` | `TEXT` | `NOT NULL`, default `{}` | Non-sensitive structured context fields |
+| `user_id` | `INTEGER` | Nullable foreign key | Authenticated user associated with the event, when available |
+
+The repository API is intentionally small: `LogRepository.append(LogEntry)` persists one event and
+`findRecent(limit)` returns bounded newest-first results. SQL remains inside `repository.sqlite`.
+
+`context_json` is stored as text because SQLite does not require a separate JSON type. The Service and logging layers
+must never put plaintext passwords, password hashes, or other authentication secrets in the context. Deleting a user
+sets `user_id` to `NULL` so historical operational events remain available without retaining a broken reference.
+
+Indexes on `(occurred_at, id)` and `level` support recent-event and severity queries without making log retrieval an
+unbounded table scan.
+
+---
+
 ## 6. One Active Rental Per Item
 
 The database contains a partial unique index:
@@ -491,7 +518,7 @@ The `users` table participates in two distinct relationships: item ownership thr
 
 | Constraint | Table or column | Purpose |
 |---|---|---|
-| `PRIMARY KEY` | All three tables | Uniquely identifies each record |
+| `PRIMARY KEY` | All four tables | Uniquely identifies each record |
 | `NOT NULL` | Required columns | Prevents required data from being absent |
 | `UNIQUE` | `users.username` | Prevents duplicate usernames |
 | `FOREIGN KEY` | `listed_items.owner_id` | Ensures every item has an existing owner |
@@ -602,19 +629,22 @@ The SQL is read as UTF-8 and executed against the SQLite connection.
 
 ### Migration policy for the multi-user schema
 
-`DatabaseManager` performs a versioned migration from the single-user users table. When an existing database has no
-`password` column, the users table is rebuilt with the multi-user shape while preserving user IDs, usernames,
-timestamps, and all rows that reference those IDs. Legacy rows receive an empty, unusable password hash rather than
-an invented credential; the authentication flow must require those accounts to be registered or reset before login.
+`DatabaseManager` uses the current schema version to distinguish an already-initialized multi-user database from a
+legacy single-user database. A fresh database receives the complete schema directly from `schema.sql`, including
+`password TEXT NOT NULL` and `application_logs`.
 
-This migration is deliberately explicit because SQLite's `CREATE TABLE IF NOT EXISTS` does not alter an existing
-table. A fresh database receives `password TEXT NOT NULL` directly from `schema.sql`, while an existing database is
-upgraded to schema version 2. The rebuild temporarily disables foreign-key enforcement, runs inside a transaction,
-checks for dangling references, restores the connection settings, and fails rather than risking silent data loss.
+When an existing database is identified as a legacy database that predates the multi-user password and ownership
+schema, the application performs the agreed destructive reset: it drops the legacy application tables and recreates the
+complete current schema. It does not rebuild the old `users` table, preserve legacy user IDs, assign empty or placeholder
+password hashes, or carry forward legacy listings, rentals, or logs. Users must register again after the reset.
 
-The alternative was to document a fresh-schema-only reset. That would be simpler, but it would discard existing rental
-history and make a persistent Docker volume unsafe to upgrade. The migration is therefore the safer choice even though
-it adds implementation and test complexity.
+This policy is deliberate. A legacy account has no trustworthy password credential and its single-user ownership
+semantics are incompatible with the multi-user design. Retaining those rows would create ambiguous login and ownership
+behavior. The reset therefore favors a clean, internally consistent database over preservation of pre-release data and
+must be communicated before deployment against an existing persistent volume.
+
+The current schema version is **3**. Initialization remains idempotent for a fresh or already-current database: existing
+current-schema tables, indexes, users, items, rentals, and application logs are not overwritten during normal startup.
 
 Foreign-key enforcement is explicitly enabled on every connection:
 
@@ -629,7 +659,9 @@ Development seed data must also be safe to apply repeatedly.
 
 The initialization process must not insert duplicate users, items, or rental records on every launch. Use a deliberate, idempotent seed-data strategy, such as stable seed identifiers with conflict handling or checking whether the required seed records already exist.
 
-Seed initialization must preserve existing user data and rental history. It must not delete and recreate populated tables to restore demo data.
+For an already-current schema, seed initialization must preserve existing user data, rental history, and application
+logs. It must not delete and recreate populated tables to restore demo data. This does not override the separate
+legacy-database policy above: a pre-multi-user legacy database is reset before current-schema seed initialization runs.
 
 Schema initialization and seed-data initialization are separate responsibilities: schema statements establish the database structure, while seed logic supplies the required development/demo records.
 
@@ -775,10 +807,11 @@ The final command and image configuration must match the actual `Dockerfile` and
 
 - The database file must be stored inside the mounted volume, not only in the container's writable filesystem.
 - User accounts, password hashes, listed items, and rental history must survive container stops and restarts.
-- Recreating a container while reusing the same named volume must preserve the database.
+- Recreating a container while reusing the same named volume must preserve a current-schema database.
 - Schema initialization must succeed when the volume contains no database.
 - Subsequent launches must not fail because existing tables or indexes already exist.
-- Initialization must not overwrite or erase existing records.
+- Initialization must not overwrite or erase records in a current-schema database. A detected pre-multi-user legacy
+  database is the documented exception and is reset according to the migration policy above.
 - Database connections must be closed cleanly on application shutdown.
 
 A named Docker volume persists independently of the container. Removing a container does not normally remove the named volume, but explicitly deleting the volume will remove its persisted database data.
@@ -908,10 +941,14 @@ Initialization tests must verify that:
 - All required tables and indexes exist after initialization.
 - Running initialization more than once does not fail because tables or indexes already exist.
 - Repeated seed initialization does not create duplicate seed records.
-- Existing users, items, and rental history are preserved.
+- Existing users, items, rental history, and application logs are preserved when the database already has the current
+  schema.
+- A pre-multi-user legacy database is detected and reset by dropping the legacy application tables and recreating the
+  current schema; no legacy passwordless user is retained.
 - Foreign-key enforcement is enabled on each connection.
 
-These tests verify that startup is safe for both a new database and a database containing existing application data.
+These tests verify that startup is safe for a new database and idempotent for current application data, while making the
+intentional destructive behavior for pre-multi-user legacy data explicit.
 
 ### Transaction tests
 
@@ -965,7 +1002,8 @@ The visual ER diagram is stored at:
 docs/er-diagram.svg
 ```
 
-The diagram represents the three tables and their foreign-key relationships:
+The diagram represents the four tables and their foreign-key relationships. `application_logs.user_id` optionally
+references `users.id`; log events may also be system events with no associated user:
 
 ```text
 users
@@ -1039,6 +1077,9 @@ The database layer must integrate with the rest of the application while preserv
 8. Verify that data survives Docker container restarts.
 9. Keep `schema.sql`, the ER diagram, and this document synchronized whenever the database design changes.
 
-Additional tables or constraints should be introduced when required by an agreed application requirement. Database changes must preserve existing data through an appropriate migration strategy.
+Additional tables or constraints should be introduced when required by an agreed application requirement. Changes must
+remain idempotent for current-schema databases. If a future change cannot safely preserve a pre-release legacy schema,
+it must document an explicit reset policy rather than inventing credentials or silently carrying forward incompatible
+data.
 
 The database design provides the relational structure, account storage, integrity constraints, rental history, transaction support, and persistent storage required by Multi-user Rental Tracker.

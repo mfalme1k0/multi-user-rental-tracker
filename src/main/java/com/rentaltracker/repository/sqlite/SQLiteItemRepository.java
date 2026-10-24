@@ -5,6 +5,7 @@ import com.rentaltracker.domain.ItemStatus;
 import com.rentaltracker.exception.NotFoundException;
 import com.rentaltracker.infrastructure.DatabaseManager;
 import com.rentaltracker.repository.ItemRepository;
+import com.rentaltracker.repository.Page;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -224,6 +225,65 @@ public class SQLiteItemRepository implements ItemRepository {
     }
 
     @Override
+    public Page<Item> findAvailableExcludingOwner(long excludedOwnerId, int pageNumber, int pageSize) {
+        if (pageNumber < 0) {
+            throw new IllegalArgumentException("Page number must not be negative");
+        }
+        if (pageSize < 1) {
+            throw new IllegalArgumentException("Page size must be at least 1");
+        }
+        String sql = """
+            SELECT id, owner_id, name, description, cost_per_day, status, created_at
+            FROM listed_items
+            WHERE status = ? AND owner_id <> ?
+            ORDER BY id ASC
+            LIMIT ? OFFSET ?
+            """;
+        Connection connection = databaseManager.getConnection();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, ItemStatus.AVAILABLE.dbValue());
+            statement.setLong(2, excludedOwnerId);
+            statement.setInt(3, pageSize + 1);
+            statement.setLong(4, (long) pageNumber * pageSize);
+            List<Item> items = new ArrayList<>();
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    items.add(mapItem(resultSet));
+                }
+            }
+            boolean hasNext = items.size() > pageSize;
+            if (hasNext) {
+                items.remove(items.size() - 1);
+            }
+            return new Page<>(items, pageNumber, pageSize, hasNext);
+        } catch (SQLException e) {
+            throw SQLiteExceptionTranslator.translate(e);
+        } finally {
+            databaseManager.releaseConnection(connection);
+        }
+    }
+
+    @Override
+    public boolean markRentedIfAvailable(long itemId) {
+        String sql = """
+            UPDATE listed_items
+            SET status = ?
+            WHERE id = ? AND status = ?
+            """;
+        Connection connection = databaseManager.getConnection();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, ItemStatus.RENTED.dbValue());
+            statement.setLong(2, itemId);
+            statement.setString(3, ItemStatus.AVAILABLE.dbValue());
+            return statement.executeUpdate() == 1;
+        } catch (SQLException e) {
+            throw SQLiteExceptionTranslator.translate(e);
+        } finally {
+            databaseManager.releaseConnection(connection);
+        }
+    }
+
+    @Override
     public void updateStatus(long itemId, ItemStatus status) {
         String sql = """
             UPDATE listed_items
@@ -287,4 +347,3 @@ public class SQLiteItemRepository implements ItemRepository {
         }
     }
 }
-
