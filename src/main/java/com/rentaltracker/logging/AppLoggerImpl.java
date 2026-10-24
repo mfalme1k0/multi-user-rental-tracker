@@ -72,9 +72,10 @@ public final class AppLoggerImpl implements AppLogger {
     // Resolves the log-file path from the environment.
     // Defaults to rental-tracker.log in the working directory if none provided.
     private static Path resolveLogFile() {
-        String configuredPath =
-                System.getenv("RENTAL_TRACKER_LOG_PATH");
+        return resolveLogFile(System.getenv("RENTAL_TRACKER_LOG_PATH"));
+    }
 
+    static Path resolveLogFile(String configuredPath) {
         if (configuredPath == null || configuredPath.isBlank()) {
             return Path.of("rental-tracker.log");
         }
@@ -227,13 +228,10 @@ public final class AppLoggerImpl implements AppLogger {
 
     // Appends a formatted log line to the file, creating directories and the file when necessary.
     // @param line, complete formatted log line
+    // Appends a formatted log line to the file, creating directories and the file when necessary.
     private void writeToFile(String line) {
         try {
-            Path parent = logFile.toAbsolutePath().getParent();
-
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
+            createParentDirectories(logFile.toAbsolutePath().getParent());
 
             Files.writeString(
                     logFile,
@@ -243,6 +241,13 @@ public final class AppLoggerImpl implements AppLogger {
             );
         } catch (IOException | SecurityException exception) {
             reportLoggingFailure("Could not write to log file");
+        }
+    }
+
+    // Creates parent directories when a parent path exists.
+    static void createParentDirectories(Path parent) throws IOException {
+        if (parent != null) {
+            Files.createDirectories(parent);
         }
     }
 
