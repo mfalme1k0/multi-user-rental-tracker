@@ -9,32 +9,28 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AuthValidatorImplTest {
 
-    private AuthValidatorImpl authValidator;
+    private AuthValidator validator;
 
     @BeforeEach
     void setUp() {
-        authValidator = new AuthValidatorImpl();
+        validator = new AuthValidatorImpl();
     }
 
     @Test
-    void testValidateUsernameReturnsUsernameWithoutSurroundingWhitespace() {
-        String result = authValidator.validateUsername("  jack  ");
-
-        assertEquals("jack", result);
+    void testValidateUsernameReturnsTrimmedUsername() {
+        assertEquals("jackson", validator.validateUsername("  jackson  "));
     }
 
     @Test
     void testValidateUsernameAcceptsUsernameWithoutWhitespace() {
-        String result = authValidator.validateUsername("jack");
-
-        assertEquals("jack", result);
+        assertEquals("jackson", validator.validateUsername("jackson"));
     }
 
     @Test
     void testValidateUsernameRejectsNull() {
         assertThrows(
                 ValidationException.class,
-                () -> authValidator.validateUsername(null)
+                () -> validator.validateUsername(null)
         );
     }
 
@@ -42,25 +38,41 @@ class AuthValidatorImplTest {
     void testValidateUsernameRejectsBlankUsername() {
         assertThrows(
                 ValidationException.class,
-                () -> authValidator.validateUsername("   ")
+                () -> validator.validateUsername("   ")
         );
     }
 
     @Test
-    void testValidatePasswordAcceptsExactlyEightCharacters() {
-        authValidator.validatePassword("password");
-    }
-
-    @Test
-    void testValidatePasswordAcceptsMoreThanEightCharacters() {
-        authValidator.validatePassword("longpassword");
-    }
-
-    @Test
-    void testValidatePasswordRejectsFewerThanEightCharacters() {
+    void testValidateUsernameRejectsEmptyUsername() {
         assertThrows(
                 ValidationException.class,
-                () -> authValidator.validatePassword("short")
+                () -> validator.validateUsername("")
+        );
+    }
+
+    @Test
+    void testValidatePasswordAcceptsMinimumLength() {
+        validator.validatePassword("12345678");
+    }
+
+    @Test
+    void testValidatePasswordAcceptsLongerPassword() {
+        validator.validatePassword("longer-password");
+    }
+
+    @Test
+    void testValidatePasswordRejectsPasswordShorterThanMinimum() {
+        assertThrows(
+                ValidationException.class,
+                () -> validator.validatePassword("1234567")
+        );
+    }
+
+    @Test
+    void testValidatePasswordRejectsEmptyPassword() {
+        assertThrows(
+                ValidationException.class,
+                () -> validator.validatePassword("")
         );
     }
 
@@ -68,7 +80,7 @@ class AuthValidatorImplTest {
     void testValidatePasswordRejectsNull() {
         assertThrows(
                 ValidationException.class,
-                () -> authValidator.validatePassword(null)
+                () -> validator.validatePassword(null)
         );
     }
 }
