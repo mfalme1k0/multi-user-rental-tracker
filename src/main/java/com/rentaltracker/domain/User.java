@@ -10,9 +10,8 @@ public record User(Long id, String username, String password, LocalDateTime crea
         return new User(null, username, passwordHash, null);
     }
 
-
-     //Legacy factory retained only, so callers fail at the persistence boundary rather than
-     //silently creating an account without credentials. New code must supply a password hash.
+    //Legacy factory retained only, so callers fail at the persistence boundary rather than
+    //silently creating an account without credentials. New code must supply a password hash.
     @Deprecated
     public static User newUser(String username) {
         return newUser(username, null);
