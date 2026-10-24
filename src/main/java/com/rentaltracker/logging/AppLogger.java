@@ -27,4 +27,3 @@ public interface AppLogger {
             Throwable cause
     );
 }
-
