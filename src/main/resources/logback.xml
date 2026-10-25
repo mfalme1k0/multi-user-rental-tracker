@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Suppress all logging-framework output, including Password4j. -->
+    <logger name="com.password4j" level="OFF" additivity="false"/>
+
+    <!-- Prevent other SLF4J/Logback messages from reaching the console. -->
+    <root level="OFF"/>
+</configuration>

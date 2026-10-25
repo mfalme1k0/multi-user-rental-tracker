@@ -1,0 +1,13 @@
+2026-10-25T07:02:28Z | WARN  | auth.login_rejected | reason=invalid_credentials
+2026-10-25T07:02:44Z | WARN  | validation.failed | entity=User reason=Password must be at least 8 characters long operation=register
+2026-10-25T07:03:03Z | WARN  | auth.login_rejected | reason=invalid_credentials
+2026-10-25T07:03:33Z | INFO  | auth.registration_succeeded | reason=registration_completed user_id=1
+2026-10-25T07:45:05Z | INFO  | auth.login_succeeded | reason=credentials_validated user_id=1
+2026-10-25T08:00:54Z | WARN  | auth.login_rejected | reason=invalid_credentials
+2026-10-25T08:02:51Z | INFO  | auth.login_succeeded | reason=credentials_validated user_id=1
+2026-10-25T08:03:17Z | INFO  | item.listed | cost_per_day=10 item_id=1 user_id=1
+2026-10-25T08:04:13Z | INFO  | item.listed | cost_per_day=15 item_id=2 user_id=1
+2026-10-25T08:05:58Z | INFO  | auth.registration_succeeded | reason=registration_completed user_id=2
+2026-10-25T08:06:11Z | INFO  | rental.created | item_id=1 end=2026-10-28T08:06:11.444074900 rental_id=1 renter_id=2 start=2026-10-25T08:06:11.444074900 user_id=2
+2026-10-25T08:17:52Z | INFO  | auth.login_succeeded | reason=credentials_validated user_id=2
+2026-10-25T08:18:10Z | INFO  | auth.login_succeeded | reason=credentials_validated user_id=1

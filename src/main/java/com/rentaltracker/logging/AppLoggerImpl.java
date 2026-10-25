@@ -282,7 +282,58 @@ public final class AppLoggerImpl implements AppLogger {
     }
 
    // Reports a logging failure directly to stderr to avoid recursive logging.
+//    private void reportLoggingFailure(String message) {
+//        System.err.println("[LOGGING FAILURE] " + message);
+//    }
+
+    // Records logging failures in the file and database without recursive reporting.
     private void reportLoggingFailure(String message) {
-        System.err.println("[LOGGING FAILURE] " + message);
+        LocalDateTime occurredAt = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+
+        String timestamp = TIMESTAMP_FORMAT.format(occurredAt.atOffset(ZoneOffset.UTC));
+
+        String safeMessage = String.valueOf(message)
+                .replace("\\", "\\\\")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("|", "\\|");
+
+        // Attempt to write the diagnostic directly to the log file.
+        String line = timestamp
+                + " | ERROR | logging.failure | message="
+                + safeMessage
+                + System.lineSeparator();
+
+        try {
+            createParentDirectories(logFile.toAbsolutePath().getParent());
+
+            Files.writeString(
+                    logFile,
+                    line,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND
+            );
+        } catch (IOException | SecurityException ignored) {
+            // Do not report this failure again to avoid recursion
+        }
+
+        // Attempt to persist the diagnostic directly to the database.
+        try {
+            String contextJson = objectMapper.writeValueAsString(
+                    Map.of("message", message == null ? "" : message)
+            );
+
+            LogEntry entry = LogEntry.newEvent(
+                    occurredAt,
+                    "ERROR",
+                    "logging.failure",
+                    contextJson,
+                    null
+            );
+
+            logRepository.append(entry);
+        } catch (Exception ignored) {
+            // Do not report this failure again to avoid recursion.
+        }
     }
 }
