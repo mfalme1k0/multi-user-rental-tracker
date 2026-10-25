@@ -5,7 +5,7 @@ import com.rentaltracker.domain.ItemStatus;
 import com.rentaltracker.exception.NotFoundException;
 import com.rentaltracker.infrastructure.DatabaseManager;
 import com.rentaltracker.repository.ItemRepository;
-import com.rentaltracker.repository.Page;
+import com.rentaltracker.domain.Page;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
