@@ -2,6 +2,7 @@ package com.rentaltracker.repository;
 
 import com.rentaltracker.domain.Item;
 import com.rentaltracker.domain.ItemStatus;
+import com.rentaltracker.domain.Page;
 
 import java.util.List;
 import java.util.Optional;

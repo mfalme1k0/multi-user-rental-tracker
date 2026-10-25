@@ -1,4 +1,4 @@
-package com.rentaltracker.repository;
+package com.rentaltracker.domain;
 
 import java.util.List;
 import java.util.Objects;

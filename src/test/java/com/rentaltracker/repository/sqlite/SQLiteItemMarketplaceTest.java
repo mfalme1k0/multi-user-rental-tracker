@@ -4,7 +4,7 @@ import com.rentaltracker.domain.Item;
 import com.rentaltracker.domain.ItemStatus;
 import com.rentaltracker.domain.User;
 import com.rentaltracker.infrastructure.DatabaseManager;
-import com.rentaltracker.repository.Page;
+import com.rentaltracker.domain.Page;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

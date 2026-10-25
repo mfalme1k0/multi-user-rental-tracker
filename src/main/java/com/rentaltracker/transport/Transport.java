@@ -4,6 +4,7 @@ import com.rentaltracker.auth.AuthService;
 import com.rentaltracker.domain.Item;
 import com.rentaltracker.domain.ItemDetails;
 import com.rentaltracker.domain.ItemStatus;
+import com.rentaltracker.domain.Page;
 import com.rentaltracker.domain.Rental;
 import com.rentaltracker.domain.RentalDetails;
 import com.rentaltracker.domain.User;
@@ -11,6 +12,7 @@ import com.rentaltracker.exception.BusinessRuleException;
 import com.rentaltracker.exception.DatabaseException;
 import com.rentaltracker.exception.InputClosedException;
 import com.rentaltracker.exception.NotFoundException;
+import com.rentaltracker.logging.AppLogger;
 import com.rentaltracker.service.ItemService;
 import com.rentaltracker.service.RentalService;
 
@@ -18,27 +20,35 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
 
-public class Transport {
+/**
+ * CLI entry: menus, input collection, and result display.
+ * Business rules and ownership live in the service layer; this class only orchestrates screens.
+ */
+public final class Transport {
 
     // Timestamps are stored as UTC (D9), so say so when displaying them.
-    private static final DateTimeFormatter DISPLAY_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'");
+    private static final DateTimeFormatter DISPLAY_TIME =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'");
 
     private final AuthService authService;
     private final ItemService itemService;
     private final RentalService rentalService;
     private final ConsoleIO io;
+    private final AppLogger logger;
     private final Session session;
     private final ListScreen listScreen;
 
     public Transport(AuthService authService,
                      ItemService itemService,
                      RentalService rentalService,
-                     ConsoleIO io) {
-        this(authService, itemService, rentalService, io, new Session());
+                     ConsoleIO io,
+                     AppLogger logger) {
+        this(authService, itemService, rentalService, io, logger, new Session());
     }
 
     // Package-private so tests can inspect or pre-seed the session.
@@ -46,18 +56,20 @@ public class Transport {
               ItemService itemService,
               RentalService rentalService,
               ConsoleIO io,
+              AppLogger logger,
               Session session) {
         this.authService = Objects.requireNonNull(authService);
         this.itemService = Objects.requireNonNull(itemService);
         this.rentalService = Objects.requireNonNull(rentalService);
         this.io = Objects.requireNonNull(io);
+        this.logger = Objects.requireNonNull(logger);
         this.session = Objects.requireNonNull(session);
         this.listScreen = new ListScreen(io);
     }
 
     // ------------------------------------------------------------------ lifecycle
 
-  //  Runs until the user exits or input ends. Always logs out on the way out.
+    /** Runs until the user exits or input ends. Always logs out on the way out. */
     public void run() {
         try {
             boolean running = true;
@@ -72,7 +84,7 @@ public class Transport {
         }
     }
 
-    //--------------------------------------------------- authentication---------------------------------------------
+    // --------------------------------------------------- authentication
 
     private boolean authMenu() {
         io.println();
@@ -82,8 +94,8 @@ public class Transport {
         io.println("3. Exit");
 
         switch (io.readLine("> ")) {
-            case "1" -> guarded(this::logIn);
-            case "2" -> guarded(this::register);
+            case "1" -> guarded("auth.login", this::logIn);
+            case "2" -> guarded("auth.register", this::register);
             case "3" -> {
                 return false;
             }
@@ -116,7 +128,7 @@ public class Transport {
         io.println("Account created. Welcome, " + user.username() + "!");
     }
 
-    // -------------------------------------------------------- main menu----------------------------------------------
+    // -------------------------------------------------------- main menu
 
     private boolean mainMenu() {
         io.println();
@@ -129,10 +141,10 @@ public class Transport {
         io.println("5. Exit");
 
         switch (io.readLine("> ")) {
-            case "1" -> guarded(this::listItem);
-            case "2" -> guarded(this::viewInventory);
-            case "3" -> guarded(this::browseListings);
-            case "4" -> guarded(this::confirmReturn);
+            case "1" -> guarded("item.list", this::listItem);
+            case "2" -> guarded("item.inventory", this::viewInventory);
+            case "3" -> guarded("item.browse", this::browseListings);
+            case "4" -> guarded("rental.confirm_menu", this::confirmReturn);
             case "5" -> {
                 session.logOut();
                 return false;
@@ -142,7 +154,7 @@ public class Transport {
         return true;
     }
 
-    // --------------------------------------------------- list an item-------------------------------------------------
+    // --------------------------------------------------- list an item
 
     private void listItem() {
         io.println();
@@ -162,7 +174,7 @@ public class Transport {
         io.println("Item listed successfully (id " + item.id() + ").");
     }
 
-    // ----------------------------------------------------- inventory-------------------------------------------------
+    // ----------------------------------------------------- inventory
 
     private void viewInventory() {
         while (true) {
@@ -174,7 +186,9 @@ public class Transport {
             }
 
             Optional<Item> selected = listScreen.select(
-                    "My inventory", items, item -> item.name() + " - " + statusText(item.status()));
+                    "My inventory",
+                    items,
+                    item -> item.name() + " - " + statusText(item.status()));
             if (selected.isEmpty()) {
                 return;
             }
@@ -182,7 +196,6 @@ public class Transport {
         }
     }
 
-    //for showing users own items , delisting, relisting
     private void showOwnItem(long itemId) {
         while (true) {
             ItemDetails details = itemService.getDetails(itemId);
@@ -205,7 +218,7 @@ public class Transport {
             }
 
             // Ownership and the relist guard are enforced by the service; show its message and stay on screen.
-            guarded(() -> {
+            guarded(unlisted ? "item.relist" : "item.delist", () -> {
                 if (unlisted) {
                     itemService.relist(itemId, session.userId());
                     io.println("Item relisted.");
@@ -217,28 +230,31 @@ public class Transport {
         }
     }
 
-    // ----------------------------------------------------- browse and rent--------------------------------------------
+    // ----------------------------------------------------- browse and rent
 
     private void browseListings() {
         while (true) {
-            List<Item> listings = marketplaceListings();
-            if (listings.isEmpty()) {
-                io.println();
-                io.println("No listings from other users are available.");
-                return;
-            }
-
             Optional<Item> selected = listScreen.select(
-                    "Browse listings", listings, item -> item.name() + " - " + item.costPerDay().toPlainString() + "/day");
+                    "Browse listings",
+                    pageNumber -> {
+                        Page<Item> page = itemService.getMarketplaceListings(
+                                session.userId(), pageNumber, ListScreen.PAGE_SIZE);
+                        return new ListScreen.PageView<>(page.items(), page.hasNext());
+                    },
+                    item -> item.name() + " - " + item.costPerDay().toPlainString() + "/day");
+
             if (selected.isEmpty()) {
+                // Distinguish "no listings at all" from user choosing Back on a non-empty list.
+                Page<Item> first = itemService.getMarketplaceListings(
+                        session.userId(), 0, ListScreen.PAGE_SIZE);
+                if (first.items().isEmpty()) {
+                    io.println();
+                    io.println("No listings from other users are available.");
+                }
                 return;
             }
             showListing(selected.get().id());
         }
-    }
-//TODO after the repo exposes the browse listings method,call it here
-    private List<Item> marketplaceListings() {
-        return List.of();
     }
 
     private void showListing(long itemId) {
@@ -272,7 +288,7 @@ public class Transport {
         io.println("Ends: " + formatTime(rental.endTime()));
     }
 
-    // ---------------------------------------------------- confirm a return--------------------------------------------
+    // ---------------------------------------------------- confirm a return
 
     private void confirmReturn() {
         while (true) {
@@ -284,16 +300,19 @@ public class Transport {
             }
 
             Optional<RentalDetails> selected = listScreen.select(
-                    "Confirm a return", rentals,
-                    r -> r.itemName() + " - " + r.renterUsername() + " (due " + formatTime(r.rental().endTime()) + ")");
+                    "Confirm a return",
+                    rentals,
+                    r -> r.itemName() + " - " + r.renterUsername()
+                            + " (due " + formatTime(r.rental().endTime()) + ")");
             if (selected.isEmpty()) {
                 return;
             }
-            showRental(selected.get());
+            tryConfirmReturn(selected.get());
         }
     }
 
-    private void showRental(RentalDetails details) {
+    /** @return true when the rental was closed so the caller can refresh the list */
+    private boolean tryConfirmReturn(RentalDetails details) {
         Rental rental = details.rental();
 
         while (true) {
@@ -311,26 +330,34 @@ public class Transport {
 
             String choice = io.readLine("> ");
             if (choice.equals("2") || choice.equalsIgnoreCase("B")) {
-                return;
+                return false;
             }
             if (!choice.equals("1")) {
                 io.println("Invalid option.");
                 continue;
             }
 
-            boolean[] confirmed = {false};
-            guarded(() -> {
+            try {
                 rentalService.confirmReturn(rental.id(), session.userId());
                 io.println("Return confirmed successfully.");
-                confirmed[0] = true;
-            });
-            if (confirmed[0]) {
-                return; // the list reloads without the closed rental
+                return true;
+            } catch (InputClosedException e) {
+                throw e;
+            } catch (BusinessRuleException e) {
+                io.println(e.getMessage());
+            } catch (NotFoundException e) {
+                logger.warn(session.userId(), "rental.confirm.not_found",
+                        Map.of("message", nullToDash(e.getMessage())));
+                io.println("That record no longer exists.");
+            } catch (DatabaseException e) {
+                logger.error(session.userId(), "rental.confirm.database_error",
+                        Map.of("message", nullToDash(e.getMessage())), e);
+                io.println("Something went wrong while accessing your data. Please try again.");
             }
         }
     }
 
-    // ---------------------------------------------------- shared helpers---------------------------------------------
+    // ---------------------------------------------------- shared helpers
 
     private void printItemDetails(ItemDetails details) {
         Item item = details.item();
@@ -343,8 +370,7 @@ public class Transport {
         io.println("listed         " + formatTime(item.createdAt()));
     }
 
-
-    private void guarded(Runnable action) {
+    private void guarded(String operation, Runnable action) {
         try {
             action.run();
         } catch (InputClosedException e) {
@@ -352,10 +378,14 @@ public class Transport {
         } catch (BusinessRuleException e) {
             io.println(e.getMessage());
         } catch (NotFoundException e) {
-            // TODO(logging): log e once structured logging exists.
+            Long userId = session.isLoggedIn() ? session.userId() : null;
+            logger.warn(userId, operation + ".not_found", Map.of(
+                    "message", nullToDash(e.getMessage())));
             io.println("That record no longer exists.");
         } catch (DatabaseException e) {
-            // TODO(logging): log e once structured logging exists.
+            Long userId = session.isLoggedIn() ? session.userId() : null;
+            logger.error(userId, operation + ".database_error", Map.of(
+                    "message", nullToDash(e.getMessage())), e);
             io.println("Something went wrong while accessing your data. Please try again.");
         }
     }

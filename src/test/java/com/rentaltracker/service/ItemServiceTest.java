@@ -10,7 +10,7 @@ import com.rentaltracker.exception.InvalidStateTransitionException;
 import com.rentaltracker.exception.ValidationException;
 import com.rentaltracker.logging.AppLogger;
 import com.rentaltracker.repository.ItemRepository;
-import com.rentaltracker.repository.Page;
+import com.rentaltracker.domain.Page;
 import com.rentaltracker.repository.RentalRepository;
 import com.rentaltracker.repository.Transactor;
 import com.rentaltracker.validation.ItemValidator;
