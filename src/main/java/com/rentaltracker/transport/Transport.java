@@ -24,6 +24,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import static java.lang.System.out;
+
 
 /**
  * CLI entry: menus, input collection, and result display.
@@ -117,7 +119,7 @@ public final class Transport {
     private void register() {
         String username = io.readLine("Choose a username: ");
         if(!authService.isUsernameAvailable(username)){
-            System.out.println("username is already taken.try another one");
+            io.println("username is already taken.try another one");
             return;}
         String password = io.readPassword("Choose a password: ");
         String confirmation = io.readPassword("Confirm password: ");
