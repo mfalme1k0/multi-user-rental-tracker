@@ -106,6 +106,7 @@ public final class Transport {
 
     private void logIn() {
         String username = io.readLine("Username: ");
+
         String password = io.readPassword("Password: ");
 
         User user = authService.login(username, password);
@@ -115,6 +116,9 @@ public final class Transport {
 
     private void register() {
         String username = io.readLine("Choose a username: ");
+        if(!authService.isUsernameAvailable(username)){
+            System.out.println("username is already taken.try another one");
+            return;}
         String password = io.readPassword("Choose a password: ");
         String confirmation = io.readPassword("Confirm password: ");
 
