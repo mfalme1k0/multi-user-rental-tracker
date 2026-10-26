@@ -63,6 +63,9 @@ public final class Main {
         LogRepository logRepository = new SQLiteLogRepository(databaseManager);
         Transactor transactor = new SQLiteTransactor(databaseManager);
 
+        // Registers available Jackson modules, including Java Time support for LocalDateTime serialization.
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+
         AppLogger logger = new AppLoggerImpl(logRepository, new ObjectMapper());
 
         UserService userService = new UserService(userRepository);
