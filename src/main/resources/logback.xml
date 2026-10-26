@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- No console appender: keep the CLI clean for end users. -->
-    <!-- Application structured events go through AppLogger → DB (and file if you keep that). -->
 
-    <logger name="com.password4j" level="ERROR"/>
-    <logger name="com.rentaltracker" level="ERROR"/>
+    <!-- Suppress all logging-framework output, including Password4j. -->
+    <logger name="com.password4j" level="OFF" additivity="false"/>
 
-    <root level="ERROR">
-        <!-- intentionally empty: nothing printed to the terminal -->
-    </root>
+    <!-- Prevent other SLF4J/Logback messages from reaching the console. -->
+    <root level="OFF"/>
 </configuration>

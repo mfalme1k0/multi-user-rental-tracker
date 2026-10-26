@@ -129,6 +129,11 @@ public class AuthServiceImpl implements AuthService {
         return user;
     }
 
+    @Override
+    public boolean isUsernameAvailable(String username) {
+        return userRepository.findByUsername(username).isEmpty();
+    }
+
     private BusinessRuleException invalidLogin() {
         logger.warn(null,
                 "auth.login_rejected",

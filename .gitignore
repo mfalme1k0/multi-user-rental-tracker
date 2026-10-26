@@ -31,5 +31,5 @@ Thumbs.db
 
 htmlReport
 
-#log
+# Local application logs
 rental-tracker.log
