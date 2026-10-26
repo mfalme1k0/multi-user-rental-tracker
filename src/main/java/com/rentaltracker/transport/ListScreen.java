@@ -1,5 +1,9 @@
 package com.rentaltracker.transport;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
@@ -50,7 +54,7 @@ final class ListScreen {
                 return Optional.empty();
             }
             if (items.isEmpty()) {
-                page = Math.max(0, page - 1);
+                page--;  // page > 0 is guaranteed here
                 continue;
             }
 
