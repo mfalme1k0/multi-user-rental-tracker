@@ -108,6 +108,10 @@ public final class Transport {
 
     private void logIn() {
         String username = io.readLine("Username: ");
+        if(authService.isUsernameAvailable(username)){
+            io.println("Please create an account first.");
+            return;
+        }
 
         String password = io.readPassword("Password: ");
 
