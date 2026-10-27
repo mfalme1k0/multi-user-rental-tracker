@@ -29,14 +29,14 @@ import com.rentaltracker.validation.RentalValidatorImpl;
 
 import java.nio.file.Path;
 import java.time.Clock;
-
+import java.util.Map;
 
 public final class Main {
 
     private static final String DEFAULT_DATABASE_FILE =
             System.getenv().getOrDefault("DB_PATH", "rental-tracker.db");
 
-    // System property that moves the database elsewhere, for testing or other purposes.
+    /** System property that moves the database elsewhere, for testing or other purposes. */
     static final String DATABASE_PROPERTY = "rentaltracker.db";
 
     private Main() {}
@@ -45,28 +45,37 @@ public final class Main {
         System.out.println("Multi-User Rental Tracker");
 
         Path databasePath = Path.of(System.getProperty(DATABASE_PROPERTY, DEFAULT_DATABASE_FILE));
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+
+        // file-only logger so schema init can be recorded before application_logs exists.
+        AppLogger logger = new AppLoggerImpl(null, objectMapper);
+        logger.info(null, "app.starting", Map.of(
+                "database_path", databasePath.toString()));
 
         DatabaseManager databaseManager = new DatabaseManager(databasePath);
 
         try {
             databaseManager.initialize();
+            logger.info(null, "app.database_initialized", Map.of(
+                    "database_path", databasePath.toString()));
         } catch (DatabaseException e) {
             // An unusable database is unrecoverable (D23).
+            logger.error(null, "app.database_init_failed", Map.of(
+                    "database_path", databasePath.toString(),
+                    "message", e.getMessage() != null ? e.getMessage() : ""), e);
             System.err.println("Could not open the database. See log for details.");
             System.exit(1);
             return;
         }
 
+        // repos + DB-backed logger (application_logs is available).
         UserRepository userRepository = new SQLiteUserRepository(databaseManager);
         ItemRepository itemRepository = new SQLiteItemRepository(databaseManager);
         RentalRepository rentalRepository = new SQLiteRentalRepository(databaseManager);
         LogRepository logRepository = new SQLiteLogRepository(databaseManager);
         Transactor transactor = new SQLiteTransactor(databaseManager);
 
-        // Registers available Jackson modules, including Java Time support for LocalDateTime serialization.
-        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
-
-        AppLogger logger = new AppLoggerImpl(logRepository, new ObjectMapper());
+        logger = new AppLoggerImpl(logRepository, objectMapper);
 
         UserService userService = new UserService(userRepository);
 
