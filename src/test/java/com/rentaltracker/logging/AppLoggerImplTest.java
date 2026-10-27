@@ -247,12 +247,8 @@ class AppLoggerImplTest {
             System.setErr(originalError);
         }
 
-        assertTrue(
-                errorOutput.toString(StandardCharsets.UTF_8)
-                        .contains("[LOGGING FAILURE]")
-        );
-        assertFalse(Files.exists(logFile));
-        verifyNoInteractions(logRepository);
+        assertTrue(Files.readString(logFile).contains("logging.failure"));
+        verify(logRepository, times(2)).append(any(LogEntry.class));
     }
 
     @Test
@@ -285,10 +281,7 @@ class AppLoggerImplTest {
         String contents = Files.readString(logFile);
 
         assertTrue(contents.contains("test.serialization"));
-        assertTrue(
-                errorOutput.toString(StandardCharsets.UTF_8)
-                        .contains("Could not serialize log context")
-        );
+        assertTrue(Files.readString(logFile).contains("Could not serialize log context"));
 
         verify(logRepository).append(any(LogEntry.class));
     }
@@ -322,12 +315,7 @@ class AppLoggerImplTest {
             System.setErr(originalError);
         }
 
-        assertTrue(
-                errorOutput.toString(StandardCharsets.UTF_8)
-                        .contains("Could not write to log file")
-        );
-
-        verify(logRepository).append(any(LogEntry.class));
+        verify(logRepository, times(2)).append(any(LogEntry.class));
     }
 
     @Test
@@ -353,12 +341,9 @@ class AppLoggerImplTest {
         String contents = Files.readString(logFile);
 
         assertTrue(contents.contains("test.database_failure"));
-        assertTrue(
-                errorOutput.toString(StandardCharsets.UTF_8)
-                        .contains("Could not persist log event")
-        );
+        assertTrue(Files.readString(logFile).contains("Could not persist log event"));
 
-        verify(logRepository).append(any(LogEntry.class));
+        verify(logRepository, times(2)).append(any(LogEntry.class));
     }
 
     @Test

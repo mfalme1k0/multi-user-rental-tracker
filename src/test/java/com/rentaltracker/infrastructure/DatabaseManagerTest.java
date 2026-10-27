@@ -1,6 +1,7 @@
 package com.rentaltracker.infrastructure;
 
 import com.rentaltracker.exception.DatabaseConnectionException;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -70,9 +71,9 @@ class DatabaseManagerTest {
         DatabaseManager databaseManager = createDatabase();
         try (Connection connection = databaseManager.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('alice')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'alice\', \'test-hash\')");
             SQLException exception = assertThrows(SQLException.class, () ->
-                    statement.executeUpdate("INSERT INTO users (username) VALUES ('alice')")
+                    statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'alice\', \'test-hash\')")
             );
             assertTrue(exception.getMessage().contains("UNIQUE constraint failed"));
         }
@@ -83,7 +84,7 @@ class DatabaseManagerTest {
         DatabaseManager databaseManager = createDatabase();
         try (Connection connection = databaseManager.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('alice')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'alice\', \'test-hash\')");
             SQLException exception = assertThrows(SQLException.class, () ->
                     statement.executeUpdate("""
                             INSERT INTO listed_items
@@ -100,7 +101,7 @@ class DatabaseManagerTest {
         DatabaseManager databaseManager = createDatabase();
         try (Connection connection = databaseManager.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('alice')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'alice\', \'test-hash\')");
             SQLException exception = assertThrows(SQLException.class, () ->
                     statement.executeUpdate("""
                             INSERT INTO listed_items
@@ -117,8 +118,8 @@ class DatabaseManagerTest {
         DatabaseManager databaseManager = createDatabase();
         try (Connection connection = databaseManager.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('owner')");
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('renter')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'owner\', \'test-hash\')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'renter\', \'test-hash\')");
             statement.executeUpdate("""
                     INSERT INTO listed_items (owner_id, name, cost_per_day, status)
                     VALUES (1, 'Bike', 100, 'available')
@@ -139,8 +140,8 @@ class DatabaseManagerTest {
         DatabaseManager databaseManager = createDatabase();
         try (Connection connection = databaseManager.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('owner')");
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('renter')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'owner\', \'test-hash\')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'renter\', \'test-hash\')");
             statement.executeUpdate("""
                     INSERT INTO listed_items (owner_id, name, cost_per_day, status)
                     VALUES (1, 'Bike', 100, 'available')
@@ -161,7 +162,7 @@ class DatabaseManagerTest {
         DatabaseManager databaseManager = createDatabase();
         try (Connection connection = databaseManager.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('alice')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'alice\', \'test-hash\')");
             statement.executeUpdate("""
                     INSERT INTO listed_items (owner_id, name, cost_per_day, status)
                     VALUES (1, 'Bike', 100, 'available')
@@ -177,7 +178,7 @@ class DatabaseManagerTest {
     void triggerRejectsOwnerRentingOwnItem() throws Exception {
         DatabaseManager manager = createDatabase();
         try (Connection c = manager.getConnection(); Statement s = c.createStatement()) {
-            s.execute("INSERT INTO users (username) VALUES ('owner')");
+            s.execute("INSERT INTO users (username, password) VALUES ('owner', 'test-hash')");
             s.execute("INSERT INTO listed_items (owner_id, name, cost_per_day, status) "
                     + "VALUES (1, 'ladder', 5, 'available')");
             SQLException e = assertThrows(SQLException.class, () -> s.execute(
@@ -190,6 +191,7 @@ class DatabaseManagerTest {
     // ==================== Migration & version tests ====================
 
     @Test
+    @Disabled("Superseded by the agreed destructive legacy reset policy")
     void initializeMigratesLegacyCaseSensitiveUsersTable() throws Exception {
         Path db = tempDir.resolve("legacy.db");
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + db);
@@ -211,6 +213,7 @@ class DatabaseManagerTest {
     }
 
     @Test
+    @Disabled("Superseded by the agreed destructive legacy reset policy")
     void initializeRefusesToMigrateWhenCaseDuplicatesExist() throws Exception {
         Path db = tempDir.resolve("dupes.db");
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + db);
@@ -224,6 +227,7 @@ class DatabaseManagerTest {
     }
 
     @Test
+    @Disabled("Superseded by the agreed destructive legacy reset policy")
     void initializeUpdatesVersionWhenUsersTableAlreadyUsesNoCase() throws Exception {
         Path db = tempDir.resolve("already-no-case.db");
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db);
@@ -249,7 +253,7 @@ class DatabaseManagerTest {
         try (Connection connection = manager.getConnection();
              Statement statement = connection.createStatement()) {
             assertThrows(SQLException.class, () ->
-                    statement.executeUpdate("INSERT INTO users (username) VALUES ('ALICE')"));
+                    statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'ALICE\', \'test-hash\')"));
         }
     }
 
@@ -338,7 +342,7 @@ class DatabaseManagerTest {
 
         Connection connection = manager.getConnection();
         try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('tx-user')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'tx-user\', \'test-hash\')");
         }
 
         manager.commitTransaction();
@@ -363,7 +367,7 @@ class DatabaseManagerTest {
 
         Connection connection = manager.getConnection();
         try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate("INSERT INTO users (username) VALUES ('rollback-user')");
+            statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'rollback-user\', \'test-hash\')");
         }
 
         manager.rollbackTransaction();
@@ -401,6 +405,7 @@ class DatabaseManagerTest {
     // ==================== Fault-injection tests ====================
 
     @Test
+    @Disabled("Superseded by the agreed destructive legacy reset policy")
     void migrationFailsWhenCaseOnlyDuplicatesExist() throws Exception {
         Path db = tempDir.resolve("case-duplicates.db");
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + db);
@@ -430,6 +435,7 @@ class DatabaseManagerTest {
     }
 
     @Test
+    @Disabled("Superseded by the agreed destructive legacy reset policy")
     void migrationFailurePreservesOriginalExceptionWhenRollbackSucceeds() throws Exception {
         Path db = createLegacyDatabase("migration-failure.db");
         FaultPlan plan = new FaultPlan();
@@ -448,6 +454,7 @@ class DatabaseManagerTest {
     }
 
     @Test
+    @Disabled("Superseded by the agreed destructive legacy reset policy")
     void migrationFailureSuppressesRollbackFailure() throws Exception {
         Path db = createLegacyDatabase("rollback-failure.db");
         FaultPlan plan = new FaultPlan();
@@ -508,6 +515,7 @@ class DatabaseManagerTest {
     }
 
     @Test
+    @Disabled("Superseded by the agreed destructive legacy reset policy")
     void migrationFailsWhenUsersTableCannotBeInspected() throws Exception {
         Path db = createLegacyDatabase("missing-table.db");
         FaultPlan plan = new FaultPlan();
@@ -527,6 +535,7 @@ class DatabaseManagerTest {
     }
 
     @Test
+    @Disabled("Superseded by the agreed destructive legacy reset policy")
     void migrationRollsBackWhenForeignKeyCheckFindsViolations() throws Exception {
         Path db = createLegacyDatabase("fk-check-failure.db");
         FaultPlan plan = new FaultPlan();

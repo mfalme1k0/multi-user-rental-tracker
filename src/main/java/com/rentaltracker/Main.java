@@ -50,6 +50,7 @@ public final class Main {
 
         try {
             databaseManager.initialize();
+            databaseManager.initializeDevelopmentData();
         } catch (DatabaseException e) {
             // An unusable database is unrecoverable (D23).
             System.err.println("Could not open the database. See log for details.");
@@ -66,7 +67,7 @@ public final class Main {
         // Registers available Jackson modules, including Java Time support for LocalDateTime serialization.
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
-        AppLogger logger = new AppLoggerImpl(logRepository, new ObjectMapper());
+        AppLogger logger = new AppLoggerImpl(logRepository, objectMapper);
 
         UserService userService = new UserService(userRepository);
 

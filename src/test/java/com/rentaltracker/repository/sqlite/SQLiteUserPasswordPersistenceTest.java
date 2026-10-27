@@ -49,7 +49,7 @@ class SQLiteUserPasswordPersistenceTest {
 
         assertThrows(
                 NotNullConstraintException.class,
-                () -> repository.insert(User.newUser("missing-password"))
+                () -> repository.insert(User.newUser("missing-password", null))
         );
     }
 

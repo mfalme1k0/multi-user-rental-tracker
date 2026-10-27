@@ -51,7 +51,7 @@ class SQLiteTransactorFailureTest {
 
     @Test
     void failedLaterWriteUndoesEarlierStatusChange() {
-        User owner = users.insert(User.newUser("owner"));
+        User owner = users.insert(User.newUser("owner", "test-hash"));
         Item item = items.insert(Item.newListing(owner.id(), "Camera", null, new BigDecimal("10")));
         LocalDateTime start = LocalDateTime.of(2026, 10, 2, 10, 0);
 
@@ -73,7 +73,7 @@ class SQLiteTransactorFailureTest {
         // The item insert needs the owner row, which is uncommitted at that point,
         // so the foreign key can only pass if both writes use the same connection.
         transactor.inTransaction(() -> {
-            User owner = users.insert(User.newUser("owner"));
+            User owner = users.insert(User.newUser("owner", "test-hash"));
             items.insert(Item.newListing(owner.id(), "Camera", null, new BigDecimal("10")));
         });
 
@@ -85,7 +85,7 @@ class SQLiteTransactorFailureTest {
     void errorThatIsNotARuntimeExceptionStillRollsBackAndEndsTheTransaction() {
         assertThrows(AssertionError.class, () ->
                 transactor.inTransaction(() -> {
-                    users.insert(User.newUser("ghost"));
+                    users.insert(User.newUser("ghost", "test-hash"));
                     throw new AssertionError("not a RuntimeException");
                 })
         );
@@ -94,7 +94,7 @@ class SQLiteTransactorFailureTest {
         assertTrue(users.findByUsername("ghost").isEmpty());
 
         // A later call must start a fresh transaction and really commit.
-        transactor.inTransaction(() -> users.insert(User.newUser("after")));
+        transactor.inTransaction(() -> users.insert(User.newUser("after", "test-hash")));
 
         DatabaseManager reopened = new DatabaseManager(tempDir.resolve("failure.db"));
         assertTrue(new SQLiteUserRepository(reopened).findByUsername("after").isPresent());

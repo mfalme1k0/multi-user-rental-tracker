@@ -33,7 +33,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item item = Item.newListing(
@@ -88,7 +88,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item item = new Item(
@@ -128,7 +128,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item saved = itemRepository.insert(
@@ -157,7 +157,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item saved = itemRepository.insert(
@@ -185,7 +185,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User alice = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item first = itemRepository.insert(
@@ -222,11 +222,11 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User alice = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         User bob = userRepository.insert(
-                User.newUser("bob")
+                User.newUser("bob", "test-hash")
         );
 
         Item alicesItem = itemRepository.insert(
@@ -263,7 +263,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         List<Item> items = itemRepository.findByOwnerId(owner.id());
@@ -281,7 +281,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item first = itemRepository.insert(
@@ -322,7 +322,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         List<Item> items =
@@ -345,7 +345,7 @@ class SQLiteItemRepositoryTest {
                 new SQLiteItemRepository(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item item = itemRepository.insert(
