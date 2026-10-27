@@ -56,11 +56,11 @@ class SQLiteRentalRepositoryTest {
     @Test
     void insertReturnsRentalWithGeneratedId() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter = userRepository.insert(
-                User.newUser("renter")
+                User.newUser("renter", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -100,11 +100,11 @@ class SQLiteRentalRepositoryTest {
     @Test
     void findByIdReturnsSavedRental() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter = userRepository.insert(
-                User.newUser("renter")
+                User.newUser("renter", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -143,11 +143,11 @@ class SQLiteRentalRepositoryTest {
     @Test
     void getByIdReturnsSavedRental() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter = userRepository.insert(
-                User.newUser("renter")
+                User.newUser("renter", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -185,15 +185,15 @@ class SQLiteRentalRepositoryTest {
     @Test
     void insertRejectsSecondActiveRentalForSameItem() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter1 = userRepository.insert(
-                User.newUser("renter1")
+                User.newUser("renter1", "test-hash")
         );
 
         User renter2 = userRepository.insert(
-                User.newUser("renter2")
+                User.newUser("renter2", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -230,15 +230,15 @@ class SQLiteRentalRepositoryTest {
     @Test
     void findByItemIdReturnsRentalHistoryOldestFirst() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter1 = userRepository.insert(
-                User.newUser("renter1")
+                User.newUser("renter1", "test-hash")
         );
 
         User renter2 = userRepository.insert(
-                User.newUser("renter2")
+                User.newUser("renter2", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -306,7 +306,7 @@ class SQLiteRentalRepositoryTest {
     @Test
     void findByItemIdReturnsEmptyWhenItemHasNoRentals() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -348,11 +348,11 @@ class SQLiteRentalRepositoryTest {
     @Test
     void updateStatusClosesActiveRental() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter = userRepository.insert(
-                User.newUser("renter")
+                User.newUser("renter", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -392,11 +392,11 @@ class SQLiteRentalRepositoryTest {
     @Test
     void findActiveByItemIdReturnsActiveRental() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter = userRepository.insert(
-                User.newUser("renter")
+                User.newUser("renter", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -427,7 +427,7 @@ class SQLiteRentalRepositoryTest {
     @Test
     void findActiveByItemIdReturnsEmptyWhenNoActiveRentalExists() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -448,23 +448,23 @@ class SQLiteRentalRepositoryTest {
     @Test
     void findActiveDetailsByOwnerIdReturnsActiveRentalsForOwnersItemsOrderedByEndTime() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User otherOwner = userRepository.insert(
-                User.newUser("other-owner")
+                User.newUser("other-owner", "test-hash")
         );
 
         User renter1 = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         User renter2 = userRepository.insert(
-                User.newUser("bob")
+                User.newUser("bob", "test-hash")
         );
 
         User otherRenter = userRepository.insert(
-                User.newUser("charlie")
+                User.newUser("charlie", "test-hash")
         );
 
         Item camera = itemRepository.insert(
@@ -556,11 +556,11 @@ class SQLiteRentalRepositoryTest {
     @Test
     void updateStatusClosesRental() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter = userRepository.insert(
-                User.newUser("renter")
+                User.newUser("renter", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -619,11 +619,11 @@ class SQLiteRentalRepositoryTest {
     @Test
     void updateStatusAllowsNullReturnedAt() {
         User owner = userRepository.insert(
-                User.newUser("owner")
+                User.newUser("owner", "test-hash")
         );
 
         User renter = userRepository.insert(
-                User.newUser("renter")
+                User.newUser("renter", "test-hash")
         );
 
         Item item = itemRepository.insert(
@@ -662,7 +662,7 @@ class SQLiteRentalRepositoryTest {
     }
     @Test
     void rejectsRentalForNonexistentItem() {
-        User renter = userRepository.insert(User.newUser("renter"));
+        User renter = userRepository.insert(User.newUser("renter", "test-hash"));
 
         Rental rental = Rental.newActive(
                 999L,                                   // no item with this id exists
@@ -679,8 +679,8 @@ class SQLiteRentalRepositoryTest {
 
     @Test
     void insertStoresReturnTimeOfAnAlreadyClosedRental() {
-        User owner = userRepository.insert(User.newUser("owner"));
-        User renter = userRepository.insert(User.newUser("renter"));
+        User owner = userRepository.insert(User.newUser("owner", "test-hash"));
+        User renter = userRepository.insert(User.newUser("renter", "test-hash"));
         Item item = itemRepository.insert(
                 Item.newListing(owner.id(), "Camera", null, new BigDecimal("10")));
         LocalDateTime start = LocalDateTime.of(2026, 9, 1, 10, 0);

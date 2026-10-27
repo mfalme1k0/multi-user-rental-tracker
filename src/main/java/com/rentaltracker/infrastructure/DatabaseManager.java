@@ -163,6 +163,21 @@ public final class DatabaseManager {
         return new String(input.readAllBytes(), StandardCharsets.UTF_8);
     }
 
+      //Applies the checked-in development/demo seed after schema initialization.
+     //The script is separate from schema.sql so tests and production deployments
+     //can initialize an empty database without creating demo accounts.
+    public void initializeDevelopmentData() {
+        try (Connection connection = createConnection();
+             InputStream input = DatabaseManager.class.getResourceAsStream("/data.sql")) {
+            String seed = readSchema(input);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate(seed);
+            }
+        } catch (IOException | SQLException e) {
+            throw new DatabaseConnectionException("Could not initialize development data", e);
+        }
+    }
+
     private Connection createConnection() {
         Connection connection = null;
         try {

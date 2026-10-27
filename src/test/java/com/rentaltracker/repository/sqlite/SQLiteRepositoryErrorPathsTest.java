@@ -77,7 +77,7 @@ class SQLiteRepositoryErrorPathsTest {
     }
 
     private long insertOwnerAndItem() {
-        User owner = users.insert(User.newUser("owner"));
+        User owner = users.insert(User.newUser("owner", "test-hash"));
         return items.insert(Item.newListing(owner.id(), "Ladder", "tall", new BigDecimal("5"))).id();
     }
 
@@ -120,7 +120,7 @@ class SQLiteRepositoryErrorPathsTest {
 
     @Test
     void userWithUnparsableTimestampIsAMappingFailure() {
-        exec("INSERT INTO users (username, created_at) VALUES ('x', 'not-a-date')");
+        exec("INSERT INTO users (username, password, created_at) VALUES ('x', 'test-hash', 'not-a-date')");
 
         MappingException e = assertMappingFailure(() -> users.findById(1));
         assertMappingFailure(() -> users.findByUsername("x"));
@@ -132,7 +132,7 @@ class SQLiteRepositoryErrorPathsTest {
 
     @Test
     void itemWithUnparsableTimestampIsAMappingFailure() {
-        exec("INSERT INTO users (username) VALUES ('owner')",
+        exec("INSERT INTO users (username, password) VALUES ('owner', 'test-hash')",
                 "INSERT INTO listed_items (owner_id, name, cost_per_day, status, created_at) "
                         + "VALUES (1, 'Ladder', '5', 'available', 'not-a-date')");
 
@@ -147,7 +147,7 @@ class SQLiteRepositoryErrorPathsTest {
         // The CHECK constraints normally stop these rows; switch them off to simulate a
         // database written by something else (or an older, looser schema).
         exec("PRAGMA ignore_check_constraints = ON",
-                "INSERT INTO users (username) VALUES ('owner')",
+                "INSERT INTO users (username, password) VALUES ('owner', 'test-hash')",
                 "INSERT INTO listed_items (owner_id, name, cost_per_day, status) "
                         + "VALUES (1, 'BadStatus', '5', 'broken')",
                 "INSERT INTO listed_items (owner_id, name, cost_per_day, status) "
@@ -163,7 +163,7 @@ class SQLiteRepositoryErrorPathsTest {
     @Test
     void rentalWithUnparsableValuesIsAMappingFailure() {
         long itemId = insertOwnerAndItem();
-        users.insert(User.newUser("renter"));
+        users.insert(User.newUser("renter", "test-hash"));
         // 'a' < 'b', so the end > start CHECK passes even though neither is a timestamp.
         exec("INSERT INTO rentals (item_id, renter_id, start_time, end_time, status) "
                 + "VALUES (" + itemId + ", 2, 'a', 'b', 'active')");
@@ -178,7 +178,7 @@ class SQLiteRepositoryErrorPathsTest {
     @Test
     void rentalWithUnparsableReturnTimeOrUnknownStatusIsAMappingFailure() {
         long itemId = insertOwnerAndItem();
-        users.insert(User.newUser("renter"));
+        users.insert(User.newUser("renter", "test-hash"));
         exec("PRAGMA ignore_check_constraints = ON",
                 "INSERT INTO rentals (item_id, renter_id, start_time, end_time, returned_at, status) "
                         + "VALUES (" + itemId + ", 2, '2026-10-01T10:00:00Z', '2026-10-02T10:00:00Z', "
@@ -198,7 +198,7 @@ class SQLiteRepositoryErrorPathsTest {
         exec("CREATE TRIGGER swallow BEFORE INSERT ON users BEGIN SELECT RAISE(IGNORE); END");
 
         DatabaseException e = assertThrows(DatabaseException.class,
-                () -> users.insert(User.newUser("alice")));
+                () -> users.insert(User.newUser("alice", "test-hash")));
 
         assertTrue(e.getCause().getMessage().contains("could not be found"), e.getCause().getMessage());
     }
@@ -206,7 +206,7 @@ class SQLiteRepositoryErrorPathsTest {
 
     @Test
     void insertIgnoredByATriggerIsReportedForItems() {
-        User owner = users.insert(User.newUser("owner"));
+        User owner = users.insert(User.newUser("owner", "test-hash"));
         exec("CREATE TRIGGER swallow BEFORE INSERT ON listed_items BEGIN SELECT RAISE(IGNORE); END");
 
         DatabaseException e = assertThrows(DatabaseException.class, () ->
@@ -219,7 +219,7 @@ class SQLiteRepositoryErrorPathsTest {
     @Test
     void insertIgnoredByATriggerIsReportedForRentals() {
         long itemId = insertOwnerAndItem();
-        User renter = users.insert(User.newUser("renter"));
+        User renter = users.insert(User.newUser("renter", "test-hash"));
         exec("CREATE TRIGGER swallow BEFORE INSERT ON rentals BEGIN SELECT RAISE(IGNORE); END");
 
         DatabaseException e = assertThrows(DatabaseException.class, () ->

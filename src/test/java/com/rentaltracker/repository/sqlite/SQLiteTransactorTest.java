@@ -31,7 +31,7 @@ class SQLiteTransactorTest {
                 new SQLiteTransactor(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item item = Item.newListing(
@@ -76,7 +76,7 @@ class SQLiteTransactorTest {
                 new SQLiteTransactor(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item item = Item.newListing(
@@ -114,7 +114,7 @@ class SQLiteTransactorTest {
                 new SQLiteTransactor(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item firstItem = Item.newListing(
@@ -159,7 +159,7 @@ class SQLiteTransactorTest {
                 new SQLiteTransactor(databaseManager);
 
         User owner = userRepository.insert(
-                User.newUser("alice")
+                User.newUser("alice", "test-hash")
         );
 
         Item firstItem = Item.newListing(

@@ -53,7 +53,7 @@ class SchemaConstraintsTest {
     @ParameterizedTest
     @ValueSource(strings = {"", "abc", "1.2.3", ".5", "5.", "0", "0.00", "-1", "1e3", " 5"})
     void costPerDayRejectsMalformedOrNonPositiveValues(String cost) throws Exception {
-        exec("INSERT INTO users (username) VALUES ('owner')");
+        exec("INSERT INTO users (username, password) VALUES ('owner', 'test-hash')");
 
         assertRejected("CHECK constraint failed", insertItemWithCost(cost));
     }
@@ -61,14 +61,14 @@ class SchemaConstraintsTest {
     @ParameterizedTest
     @ValueSource(strings = {"1", "0.5", "0.01", "10", "100.50", "007"})
     void costPerDayAcceptsPositiveDecimals(String cost) throws Exception {
-        exec("INSERT INTO users (username) VALUES ('owner')");
+        exec("INSERT INTO users (username, password) VALUES ('owner', 'test-hash')");
 
         assertDoesNotThrow(() -> exec(insertItemWithCost(cost)));
     }
 
     @Test
     void itemWithRentalsCannotBeDeleted() throws Exception {
-        exec("INSERT INTO users (username) VALUES ('owner'), ('renter')",
+        exec("INSERT INTO users (username, password) VALUES ('owner', 'test-hash'), ('renter', 'test-hash')",
                 insertItemWithCost("5"),
                 "INSERT INTO rentals (item_id, renter_id, start_time, end_time, status) "
                         + "VALUES (1, 2, '2026-10-01T10:00:00Z', '2026-10-02T10:00:00Z', 'closed')");
@@ -78,7 +78,7 @@ class SchemaConstraintsTest {
 
     @Test
     void renterWithRentalsCannotBeDeleted() throws Exception {
-        exec("INSERT INTO users (username) VALUES ('owner'), ('renter')",
+        exec("INSERT INTO users (username, password) VALUES ('owner', 'test-hash'), ('renter', 'test-hash')",
                 insertItemWithCost("5"),
                 "INSERT INTO rentals (item_id, renter_id, start_time, end_time, status) "
                         + "VALUES (1, 2, '2026-10-01T10:00:00Z', '2026-10-02T10:00:00Z', 'closed')");
@@ -97,7 +97,7 @@ class SchemaConstraintsTest {
 
     @Test
     void secondActiveRentalIsRejectedButClosedHistoryIsNot() throws Exception {
-        exec("INSERT INTO users (username) VALUES ('owner'), ('a'), ('b')",
+        exec("INSERT INTO users (username, password) VALUES ('owner', 'test-hash'), ('a', 'test-hash'), ('b', 'test-hash')",
                 insertItemWithCost("5"),
                 "INSERT INTO rentals (item_id, renter_id, start_time, end_time, status) "
                         + "VALUES (1, 2, '2026-10-01T10:00:00Z', '2026-10-02T10:00:00Z', 'closed')",
