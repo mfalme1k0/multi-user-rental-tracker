@@ -123,7 +123,7 @@ public final class Transport {
     private void register() {
         String username = io.readLine("Choose a username: ");
         if(!authService.isUsernameAvailable(username)){
-            io.println("username is already taken.try another one");
+            io.println("invalid username");
             return;}
         String password = io.readPassword("Choose a password: ");
         String confirmation = io.readPassword("Confirm password: ");
@@ -148,7 +148,7 @@ public final class Transport {
         io.println("2. View my inventory");
         io.println("3. Browse listings");
         io.println("4. Confirm a return");
-        io.println("5. Exit");
+        io.println("5. Log out");
 
         switch (io.readLine("> ")) {
             case "1" -> guarded("item.list", this::listItem);
@@ -157,7 +157,7 @@ public final class Transport {
             case "4" -> guarded("rental.confirm_menu", this::confirmReturn);
             case "5" -> {
                 session.logOut();
-                return false;
+                return authMenu();
             }
             default -> io.println("Invalid option.");
         }

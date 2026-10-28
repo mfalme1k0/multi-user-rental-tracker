@@ -19,8 +19,12 @@ public record LogEntry(
         Objects.requireNonNull(contextJson, "contextJson");
     }
 
-    public static LogEntry newEvent(LocalDateTime occurredAt, String level,
-                                    String eventName, String contextJson, Long userId) {
+    public static LogEntry newEvent(
+            LocalDateTime occurredAt,
+            String level,
+            String eventName,
+            String contextJson,
+            Long userId) {
         return new LogEntry(null, occurredAt, level, eventName, contextJson, userId);
     }
 }

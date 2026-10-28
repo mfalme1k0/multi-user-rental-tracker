@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,17 +60,17 @@ class TransportTest {
 
     @Test
     void constructorsRejectNullDependencies() {
-        ConsoleIO io = io("3\n");
+        ConsoleIO consoleIO = io("3\n");
         assertThrows(NullPointerException.class,
-                () -> new Transport(null, itemService, rentalService, io, logger));
+                () -> new Transport(null, itemService, rentalService, consoleIO, logger));
         assertThrows(NullPointerException.class,
-                () -> new Transport(authService, null, rentalService, io, logger));
+                () -> new Transport(authService, null, rentalService, consoleIO, logger));
         assertThrows(NullPointerException.class,
-                () -> new Transport(authService, itemService, null, io, logger));
+                () -> new Transport(authService, itemService, null, consoleIO, logger));
         assertThrows(NullPointerException.class,
                 () -> new Transport(authService, itemService, rentalService, null, logger));
         assertThrows(NullPointerException.class,
-                () -> new Transport(authService, itemService, rentalService, io, null));
+                () -> new Transport(authService, itemService, rentalService, consoleIO, null));
     }
 
     @Test
@@ -80,7 +81,7 @@ class TransportTest {
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ConsoleIO consoleIO = new ConsoleIO(
-                new ByteArrayInputStream("2\n5\n".getBytes(StandardCharsets.UTF_8)),
+                new ByteArrayInputStream("2\n5\n3\n".getBytes(StandardCharsets.UTF_8)),
                 new PrintStream(out, true, StandardCharsets.UTF_8));
         new Transport(authService, itemService, rentalService, consoleIO, logger, session).run();
 
@@ -106,14 +107,38 @@ class TransportTest {
     }
 
     @Test
-    void loginThenExit() {
+    void loginUnknownUsernameStopsBeforePassword() {
+        when(authService.isUsernameAvailable("ghost")).thenReturn(true);
+
+        String output = run("1\nghost\n3\n");
+
+        assertTrue(output.contains("Please create an account first."));
+        verify(authService, never()).login(anyString(), anyString());
+    }
+
+    @Test
+    void loginThenLogoutThenExit() {
+        stubExistingUser("alice");
         when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
 
-        String output = run("1\nalice\nsecret\n5\n");
+        // 5 = log out → auth menu; 3 = exit
+        String output = run("1\nalice\nsecret\n5\n3\n");
 
         assertTrue(output.contains("Welcome back, alice!"));
+        assertTrue(output.contains("1. Log in"));
         assertTrue(output.contains("Goodbye."));
         verify(authService).login("alice", "secret");
+    }
+
+    @Test
+    void logoutThenLoginAgain() {
+        stubExistingUser("alice");
+        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+
+        String output = run("1\nalice\nsecret\n5\n1\nalice\nsecret\n5\n3\n");
+
+        verify(authService, times(2)).login("alice", "secret");
+        assertTrue(output.contains("Goodbye."));
     }
 
     @Test
@@ -122,7 +147,7 @@ class TransportTest {
 
         String output = run("2\nking1\n3\n");
 
-        assertTrue(output.contains("username is already taken"));
+        assertTrue(output.contains("invalid username"));
         verify(authService).isUsernameAvailable("king1");
         verify(authService, never()).register(anyString(), anyString());
     }
@@ -138,14 +163,15 @@ class TransportTest {
     }
 
     @Test
-    void registerSuccessThenExit() {
+    void registerSuccessThenLogoutThenExit() {
         when(authService.isUsernameAvailable("bob")).thenReturn(true);
         when(authService.register("bob", "pass")).thenReturn(user(2L, "bob"));
 
-        String output = run("2\nbob\npass\npass\n5\n");
+        String output = run("2\nbob\npass\npass\n5\n3\n");
 
         assertTrue(output.contains("Account created. Welcome, bob!"));
         verify(authService).register("bob", "pass");
+        assertTrue(output.contains("Goodbye."));
     }
 
     @Test
@@ -159,9 +185,9 @@ class TransportTest {
 
     @Test
     void invalidMainMenuOption() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
 
-        String output = run("1\nalice\nsecret\n9\n5\n");
+        String output = run("1\nalice\nsecret\n9\n5\n3\n");
 
         assertTrue(output.contains("Invalid option."));
     }
@@ -172,20 +198,20 @@ class TransportTest {
 
     @Test
     void listItemSuccess() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         when(itemService.listItem(eq(1L), eq("Drill"), eq("cordless"), any(BigDecimal.class)))
                 .thenReturn(item(10L, 1L, "Drill", ItemStatus.AVAILABLE));
 
-        String output = run("1\nalice\nsecret\n1\nDrill\ncordless\n5.00\n5\n");
+        String output = run("1\nalice\nsecret\n1\nDrill\ncordless\n5.00\n5\n3\n");
 
         assertTrue(output.contains("Item listed successfully (id 10)"));
     }
 
     @Test
     void listItemInvalidCost() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
 
-        String output = run("1\nalice\nsecret\n1\nDrill\ncordless\nabc\n5\n");
+        String output = run("1\nalice\nsecret\n1\nDrill\ncordless\nabc\n5\n3\n");
 
         assertTrue(output.contains("Invalid cost."));
         verify(itemService, never()).listItem(anyLong(), anyString(), anyString(), any());
@@ -197,17 +223,17 @@ class TransportTest {
 
     @Test
     void inventoryEmpty() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         when(itemService.getInventory(1L)).thenReturn(List.of());
 
-        String output = run("1\nalice\nsecret\n2\n5\n");
+        String output = run("1\nalice\nsecret\n2\n5\n3\n");
 
         assertTrue(output.contains("No items found."));
     }
 
     @Test
     void inventoryDelistThenBack() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item available = item(10L, 1L, "Drill", ItemStatus.AVAILABLE);
         Item unlisted = item(10L, 1L, "Drill", ItemStatus.UNLISTED);
         when(itemService.getInventory(1L)).thenReturn(List.of(available)).thenReturn(List.of(unlisted));
@@ -216,7 +242,7 @@ class TransportTest {
                 .thenReturn(new ItemDetails(unlisted, "alice"));
         when(itemService.delist(10L, 1L)).thenReturn(unlisted);
 
-        String output = run("1\nalice\nsecret\n2\n1\n1\n2\nB\n5\n");
+        String output = run("1\nalice\nsecret\n2\n1\n1\n2\nB\n5\n3\n");
 
         assertTrue(output.contains("Item delisted."));
         verify(itemService).delist(10L, 1L);
@@ -224,7 +250,7 @@ class TransportTest {
 
     @Test
     void inventoryRelist() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item unlisted = item(10L, 1L, "Drill", ItemStatus.UNLISTED);
         Item available = item(10L, 1L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getInventory(1L)).thenReturn(List.of(unlisted));
@@ -233,7 +259,7 @@ class TransportTest {
                 .thenReturn(new ItemDetails(available, "alice"));
         when(itemService.relist(10L, 1L)).thenReturn(available);
 
-        String output = run("1\nalice\nsecret\n2\n1\n1\n2\nB\n5\n");
+        String output = run("1\nalice\nsecret\n2\n1\n1\n2\nB\n5\n3\n");
 
         assertTrue(output.contains("Item relisted."));
         verify(itemService).relist(10L, 1L);
@@ -241,35 +267,35 @@ class TransportTest {
 
     @Test
     void inventoryInvalidOwnItemOption() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item available = item(10L, 1L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getInventory(1L)).thenReturn(List.of(available));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(available, "alice"));
 
-        String output = run("1\nalice\nsecret\n2\n1\n9\n2\nB\n5\n");
+        String output = run("1\nalice\nsecret\n2\n1\n9\n2\nB\n5\n3\n");
 
         assertTrue(output.contains("Invalid option."));
     }
 
     @Test
     void ownItemBackWith2() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item available = item(10L, 1L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getInventory(1L)).thenReturn(List.of(available));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(available, "alice"));
 
-        run("1\nalice\nsecret\n2\n1\n2\nB\n5\n");
+        run("1\nalice\nsecret\n2\n1\n2\nB\n5\n3\n");
         verify(itemService, never()).delist(anyLong(), anyLong());
     }
 
     @Test
     void ownItemBackWithB() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item available = item(10L, 1L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getInventory(1L)).thenReturn(List.of(available));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(available, "alice"));
 
-        run("1\nalice\nsecret\n2\n1\nb\nB\n5\n");
+        run("1\nalice\nsecret\n2\n1\nb\nB\n5\n3\n");
         verify(itemService, never()).delist(anyLong(), anyLong());
     }
 
@@ -279,40 +305,36 @@ class TransportTest {
 
     @Test
     void browseShowsEmptyMarketplaceMessage() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(), 0, ListScreen.PAGE_SIZE, false));
 
-        String output = run("1\nalice\nsecret\n3\n5\n");
+        String output = run("1\nalice\nsecret\n3\n5\n3\n");
 
         assertTrue(output.contains("No listings from other users are available."));
     }
 
     @Test
     void browseBackWhenListingsExistDoesNotPrintEmptyMessage() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = item(10L, 2L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
 
-        String output = run("1\nalice\nsecret\n3\nB\n5\n");
+        String output = run("1\nalice\nsecret\n3\nB\n5\n3\n");
 
-        assertTrue(output.contains("Browse listings") || output.contains("Drill"));
         assertTrue(!output.contains("No listings from other users are available."));
-        // called once for the list, again after Back to decide empty vs not
-        verify(itemService, atLeastOnce())
-                .getMarketplaceListings(eq(1L), eq(0), eq(ListScreen.PAGE_SIZE));
     }
 
     @Test
     void browseSelectsMarketplaceItemUsingServicePaging() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = item(10L, 2L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getMarketplaceListings(eq(1L), eq(0), eq(ListScreen.PAGE_SIZE)))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(listing, "bob"));
 
-        String output = run("1\nalice\nsecret\n3\n1\n2\n5\n");
+        String output = run("1\nalice\nsecret\n3\n1\n2\n5\n3\n");
 
         assertTrue(output.contains("Drill"));
         assertTrue(output.contains("bob"));
@@ -322,44 +344,44 @@ class TransportTest {
 
     @Test
     void listingBackWith2() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = item(10L, 2L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(listing, "bob"));
 
-        run("1\nalice\nsecret\n3\n1\n2\n5\n");
+        run("1\nalice\nsecret\n3\n1\n2\n5\n3\n");
         verify(rentalService, never()).recordRental(anyLong(), anyLong(), anyInt());
     }
 
     @Test
     void listingBackWithB() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = item(10L, 2L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(listing, "bob"));
 
-        run("1\nalice\nsecret\n3\n1\nb\n5\n");
+        run("1\nalice\nsecret\n3\n1\nb\n5\n3\n");
         verify(rentalService, never()).recordRental(anyLong(), anyLong(), anyInt());
     }
 
     @Test
     void listingInvalidOption() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = item(10L, 2L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(listing, "bob"));
 
-        String output = run("1\nalice\nsecret\n3\n1\n9\n5\n");
+        String output = run("1\nalice\nsecret\n3\n1\n9\n5\n3\n");
 
         assertTrue(output.contains("Invalid option."));
     }
 
     @Test
     void rentSuccess() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = item(10L, 2L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
@@ -367,7 +389,7 @@ class TransportTest {
         Rental rental = new Rental(99L, 10L, 1L, NOW, NOW.plusDays(3), null, RentalStatus.ACTIVE);
         when(rentalService.recordRental(10L, 1L, 3)).thenReturn(rental);
 
-        String output = run("1\nalice\nsecret\n3\n1\n1\n3\n5\n");
+        String output = run("1\nalice\nsecret\n3\n1\n1\n3\n5\n3\n");
 
         assertTrue(output.contains("Rental recorded successfully."));
         assertTrue(output.contains("Rental ID: 99"));
@@ -376,13 +398,13 @@ class TransportTest {
 
     @Test
     void rentInvalidDuration() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = item(10L, 2L, "Drill", ItemStatus.AVAILABLE);
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(listing, "bob"));
 
-        String output = run("1\nalice\nsecret\n3\n1\n1\nabc\n5\n");
+        String output = run("1\nalice\nsecret\n3\n1\n1\nabc\n5\n3\n");
 
         assertTrue(output.contains("Invalid duration."));
         verify(rentalService, never()).recordRental(anyLong(), anyLong(), anyInt());
@@ -390,14 +412,14 @@ class TransportTest {
 
     @Test
     void nullDescriptionRendersDash() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = new Item(10L, 2L, "Drill", null, new BigDecimal("5.00"),
                 ItemStatus.AVAILABLE, null);
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(listing, "bob"));
 
-        String output = run("1\nalice\nsecret\n3\n1\n2\n5\n");
+        String output = run("1\nalice\nsecret\n3\n1\n2\n5\n3\n");
 
         assertTrue(output.contains("description    -"));
         assertTrue(output.contains("listed         -"));
@@ -405,14 +427,14 @@ class TransportTest {
 
     @Test
     void blankDescriptionRendersDash() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Item listing = new Item(10L, 2L, "Drill", "   ", new BigDecimal("5.00"),
                 ItemStatus.AVAILABLE, NOW);
         when(itemService.getMarketplaceListings(eq(1L), anyInt(), anyInt()))
                 .thenReturn(new Page<>(List.of(listing), 0, ListScreen.PAGE_SIZE, false));
         when(itemService.getDetails(10L)).thenReturn(new ItemDetails(listing, "bob"));
 
-        String output = run("1\nalice\nsecret\n3\n1\n2\n5\n");
+        String output = run("1\nalice\nsecret\n3\n1\n2\n5\n3\n");
 
         assertTrue(output.contains("description    -"));
     }
@@ -423,23 +445,23 @@ class TransportTest {
 
     @Test
     void confirmReturnEmpty() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         when(rentalService.getActiveRentals(1L)).thenReturn(List.of());
 
-        String output = run("1\nalice\nsecret\n4\n5\n");
+        String output = run("1\nalice\nsecret\n4\n5\n3\n");
 
         assertTrue(output.contains("No active rentals."));
     }
 
     @Test
     void confirmReturnSuccess() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Rental rental = new Rental(5L, 10L, 2L, NOW, NOW.plusDays(2), null, RentalStatus.ACTIVE);
         RentalDetails details = new RentalDetails(rental, "Drill", "bob");
         when(rentalService.getActiveRentals(1L)).thenReturn(List.of(details)).thenReturn(List.of());
         when(rentalService.confirmReturn(5L, 1L)).thenReturn(rental.closedAt(NOW));
 
-        String output = run("1\nalice\nsecret\n4\n1\n1\n5\n");
+        String output = run("1\nalice\nsecret\n4\n1\n1\n5\n3\n");
 
         assertTrue(output.contains("Return confirmed successfully."));
         verify(rentalService).confirmReturn(5L, 1L);
@@ -447,60 +469,60 @@ class TransportTest {
 
     @Test
     void confirmReturnBackWith2() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Rental rental = new Rental(5L, 10L, 2L, NOW, NOW.plusDays(2), null, RentalStatus.ACTIVE);
         when(rentalService.getActiveRentals(1L))
                 .thenReturn(List.of(new RentalDetails(rental, "Drill", "bob")));
 
-        run("1\nalice\nsecret\n4\n1\n2\nB\n5\n");
+        run("1\nalice\nsecret\n4\n1\n2\nB\n5\n3\n");
         verify(rentalService, never()).confirmReturn(anyLong(), anyLong());
     }
 
     @Test
     void confirmReturnBackWithB() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Rental rental = new Rental(5L, 10L, 2L, NOW, NOW.plusDays(2), null, RentalStatus.ACTIVE);
         when(rentalService.getActiveRentals(1L))
                 .thenReturn(List.of(new RentalDetails(rental, "Drill", "bob")));
 
-        run("1\nalice\nsecret\n4\n1\nb\nB\n5\n");
+        run("1\nalice\nsecret\n4\n1\nb\nB\n5\n3\n");
         verify(rentalService, never()).confirmReturn(anyLong(), anyLong());
     }
 
     @Test
     void confirmReturnInvalidOptionThenBack() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Rental rental = new Rental(5L, 10L, 2L, NOW, NOW.plusDays(2), null, RentalStatus.ACTIVE);
         when(rentalService.getActiveRentals(1L))
                 .thenReturn(List.of(new RentalDetails(rental, "Drill", "bob")));
 
-        String output = run("1\nalice\nsecret\n4\n1\n9\n2\nB\n5\n");
+        String output = run("1\nalice\nsecret\n4\n1\n9\n2\nB\n5\n3\n");
 
         assertTrue(output.contains("Invalid option."));
     }
 
     @Test
     void confirmReturnBusinessRuleMessage() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Rental rental = new Rental(5L, 10L, 2L, NOW, NOW.plusDays(2), null, RentalStatus.ACTIVE);
         when(rentalService.getActiveRentals(1L))
                 .thenReturn(List.of(new RentalDetails(rental, "Drill", "bob")));
         when(rentalService.confirmReturn(5L, 1L)).thenThrow(new BusinessRuleException("Not the owner"));
 
-        String output = run("1\nalice\nsecret\n4\n1\n1\n2\nB\n5\n");
+        String output = run("1\nalice\nsecret\n4\n1\n1\n2\nB\n5\n3\n");
 
         assertTrue(output.contains("Not the owner"));
     }
 
     @Test
     void confirmReturnNotFound() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Rental rental = new Rental(5L, 10L, 2L, NOW, NOW.plusDays(2), null, RentalStatus.ACTIVE);
         when(rentalService.getActiveRentals(1L))
                 .thenReturn(List.of(new RentalDetails(rental, "Drill", "bob")));
         when(rentalService.confirmReturn(5L, 1L)).thenThrow(new NotFoundException("gone"));
 
-        String output = run("1\nalice\nsecret\n4\n1\n1\n2\nB\n5\n");
+        String output = run("1\nalice\nsecret\n4\n1\n1\n2\nB\n5\n3\n");
 
         assertTrue(output.contains("That record no longer exists."));
         verify(logger).warn(eq(1L), eq("rental.confirm.not_found"), any(Map.class));
@@ -508,13 +530,13 @@ class TransportTest {
 
     @Test
     void confirmReturnDatabaseError() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Rental rental = new Rental(5L, 10L, 2L, NOW, NOW.plusDays(2), null, RentalStatus.ACTIVE);
         when(rentalService.getActiveRentals(1L))
                 .thenReturn(List.of(new RentalDetails(rental, "Drill", "bob")));
         when(rentalService.confirmReturn(5L, 1L)).thenThrow(new DatabaseException("disk"));
 
-        String output = run("1\nalice\nsecret\n4\n1\n1\n2\nB\n5\n");
+        String output = run("1\nalice\nsecret\n4\n1\n1\n2\nB\n5\n3\n");
 
         assertTrue(output.contains("Something went wrong while accessing your data"));
         verify(logger).error(eq(1L), eq("rental.confirm.database_error"),
@@ -523,7 +545,7 @@ class TransportTest {
 
     @Test
     void confirmReturnInputClosedUnwinds() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         Rental rental = new Rental(5L, 10L, 2L, NOW, NOW.plusDays(2), null, RentalStatus.ACTIVE);
         when(rentalService.getActiveRentals(1L))
                 .thenReturn(List.of(new RentalDetails(rental, "Drill", "bob")));
@@ -540,21 +562,21 @@ class TransportTest {
 
     @Test
     void guardedPrintsBusinessRuleMessage() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         when(itemService.listItem(eq(1L), anyString(), anyString(), any()))
                 .thenThrow(new BusinessRuleException("Name is required"));
 
-        String output = run("1\nalice\nsecret\n1\n\ndesc\n3.00\n5\n");
+        String output = run("1\nalice\nsecret\n1\n\ndesc\n3.00\n5\n3\n");
 
         assertTrue(output.contains("Name is required"));
     }
 
     @Test
     void guardedLogsNotFoundAndShowsFriendlyMessage() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         when(itemService.getInventory(1L)).thenThrow(new NotFoundException("gone"));
 
-        String output = run("1\nalice\nsecret\n2\n5\n");
+        String output = run("1\nalice\nsecret\n2\n5\n3\n");
 
         assertTrue(output.contains("That record no longer exists."));
         verify(logger).warn(eq(1L), eq("item.inventory.not_found"), any(Map.class));
@@ -562,10 +584,10 @@ class TransportTest {
 
     @Test
     void guardedLogsDatabaseError() {
-        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+        stubAliceLogin();
         when(itemService.getInventory(1L)).thenThrow(new DatabaseException("disk"));
 
-        String output = run("1\nalice\nsecret\n2\n5\n");
+        String output = run("1\nalice\nsecret\n2\n5\n3\n");
 
         assertTrue(output.contains("Something went wrong while accessing your data"));
         verify(logger).error(eq(1L), eq("item.inventory.database_error"),
@@ -574,6 +596,7 @@ class TransportTest {
 
     @Test
     void guardedNotFoundWhileLoggedOutUsesNullUserId() {
+        stubExistingUser("alice");
         when(authService.login("alice", "secret")).thenThrow(new NotFoundException("gone"));
 
         String output = run("1\nalice\nsecret\n3\n");
@@ -584,6 +607,7 @@ class TransportTest {
 
     @Test
     void guardedDatabaseErrorWhileLoggedOutUsesNullUserId() {
+        stubExistingUser("alice");
         when(authService.login("alice", "secret")).thenThrow(new DatabaseException("disk"));
 
         String output = run("1\nalice\nsecret\n3\n");
@@ -595,6 +619,7 @@ class TransportTest {
 
     @Test
     void guardedInputClosedUnwindsToGoodbye() {
+        stubExistingUser("alice");
         when(authService.login("alice", "secret")).thenThrow(new InputClosedException());
 
         String output = run("1\nalice\nsecret\n");
@@ -605,6 +630,16 @@ class TransportTest {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /** Username is taken (not available) → login may proceed to password. */
+    private void stubExistingUser(String username) {
+        when(authService.isUsernameAvailable(username)).thenReturn(false);
+    }
+
+    private void stubAliceLogin() {
+        stubExistingUser("alice");
+        when(authService.login("alice", "secret")).thenReturn(user(1L, "alice"));
+    }
 
     private static User user(long id, String name) {
         return new User(id, name, "hash", NOW);

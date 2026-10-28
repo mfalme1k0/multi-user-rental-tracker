@@ -13,17 +13,18 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.StringJoiner;
 
-// Writes human-readable log messages to a file and persists structured log events through LogRepository.
-// Logging failures are reported to stderr rather than propagated into normal application operations.
+
 public final class AppLoggerImpl implements AppLogger {
 
-    // Defines the UTC timestamp format used in the log file.
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'");
 
-    // Field names whose values must be redacted before logging.
     private static final Set<String> SENSITIVE_FIELDS = Set.of(
             "password",
             "password_hash",
@@ -34,43 +35,28 @@ public final class AppLoggerImpl implements AppLogger {
     );
 
     private final Path logFile;
+  //nullable for file only read before db
     private final LogRepository logRepository;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
-    // Creates a logger using the configured file path and system UTC clock.
-    // @param logRepository persists structured log events
-    // @param objectMapper serializes event context as JSON
-    public AppLoggerImpl(
-            LogRepository logRepository,
-            ObjectMapper objectMapper) {
 
-        this(resolveLogFile(),
-                logRepository,
-                objectMapper,
-                Clock.systemUTC()
-        );
+    public AppLoggerImpl(LogRepository logRepository, ObjectMapper objectMapper) {
+        this(resolveLogFile(), logRepository, objectMapper, Clock.systemUTC());
     }
 
-    // Creates a logger with explicitly supplied dependencies.
-    // @param logFile destination for readable log messages
-    // @param logRepository persists structured log events
-    // @param objectMapper serializes event context
-    // @param clock supplies timestamps
+
     public AppLoggerImpl(
             Path logFile,
             LogRepository logRepository,
             ObjectMapper objectMapper,
-            Clock clock
-    ) {
+            Clock clock) {
         this.logFile = Objects.requireNonNull(logFile, "logFile");
-        this.logRepository = Objects.requireNonNull(logRepository, "logRepository");
+        this.logRepository = logRepository; // intentionally nullable for bootstrap
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    // Resolves the log-file path from the environment.
-    // Defaults to rental-tracker.log in the working directory if none provided.
     private static Path resolveLogFile() {
         return resolveLogFile(System.getenv("RENTAL_TRACKER_LOG_PATH"));
     }
@@ -79,52 +65,29 @@ public final class AppLoggerImpl implements AppLogger {
         if (configuredPath == null || configuredPath.isBlank()) {
             return Path.of("rental-tracker.log");
         }
-
         return Path.of(configuredPath);
     }
 
-    // Records a diagnostic event.
-    // @param userId, ID of the user who performed the action, or null for system events
-    // @param event, stable event name
-    // @param context, structured event details
     @Override
     public void debug(Long userId, String event, Map<String, ?> context) {
         write(userId, "DEBUG", event, context, null);
     }
 
-    // Records a normal application event.
     @Override
     public void info(Long userId, String event, Map<String, ?> context) {
         write(userId, "INFO", event, context, null);
     }
 
-    // Records a warning about a recoverable problem.
     @Override
     public void warn(Long userId, String event, Map<String, ?> context) {
         write(userId, "WARN", event, context, null);
     }
 
-    // Records an error without automatically exposing exception messages.
-    // @param userId, associated user ID, or null for system events
-    // @param event, stable event name
-    // @param context, structured event details
-    // @param cause, associated exception, or null
     @Override
-    public void error(
-            Long userId,
-            String event,
-            Map<String, ?> context,
-            Throwable cause
-    ) {
+    public void error(Long userId, String event, Map<String, ?> context, Throwable cause) {
         write(userId, "ERROR", event, context, cause);
     }
 
-    // Prepares a log event and sends it to the text file and database.
-    // @param userId, ID of the user associated with the event, or null
-    // @param level, severity of the event
-    // @param event, stable event name
-    // @param context, structured event details
-    // @param cause, associated exception, or null
     private void write(
             Long userId,
             String level,
@@ -137,9 +100,7 @@ public final class AppLoggerImpl implements AppLogger {
             return;
         }
 
-        // Copy the context without retaining known sensitive values.
         Map<String, Object> safeContext = new LinkedHashMap<>();
-
         if (context != null) {
             safeContext.putAll(context);
         }
@@ -150,40 +111,28 @@ public final class AppLoggerImpl implements AppLogger {
             }
         }
 
-        // Use the supplied user ID as the authoritative actor identifier.
         safeContext.remove("user_id");
-
         if (userId != null) {
             safeContext.put("user_id", userId);
         }
 
-        // Record only the exception type to avoid exposing sensitive messages.
         if (cause != null) {
-            safeContext.put(
-                    "error_type",
-                    cause.getClass().getSimpleName()
-            );
+            safeContext.put("error_type", cause.getClass().getSimpleName());
         }
 
-        // Use the same UTC timestamp for both logging destinations.
         LocalDateTime occurredAt =
                 LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
 
         String timestamp = TIMESTAMP_FORMAT.format(occurredAt.atOffset(ZoneOffset.UTC));
 
-        // Serialize the structured context for database storage.
         String contextJson;
-
         try {
             contextJson = objectMapper.writeValueAsString(safeContext);
         } catch (JsonProcessingException exception) {
             reportLoggingFailure("Could not serialize log context");
-
-            // Preserve a record that context serialization failed.
             contextJson = "{\"context_serialization_error\":true}";
         }
 
-        // Format the event as a readable line for the log file.
         String line = timestamp
                 + " | "
                 + String.format("%-5s", level)
@@ -193,24 +142,13 @@ public final class AppLoggerImpl implements AppLogger {
                 + formatContext(safeContext)
                 + System.lineSeparator();
 
-        // Attempt each destination independently.
+        // File always; database only when a repository is wired.
         writeToFile(line);
-
-        writeToDatabase(
-                occurredAt,
-                level,
-                event,
-                contextJson,
-                userId
-        );
+        writeToDatabase(occurredAt, level, event, contextJson, userId);
     }
 
-    // Formats context entries as a space-separated key=value pairs.
-    // Escapes line breaks and separators to preserve one event per line.
-    // @param context event details
     private String formatContext(Map<String, ?> context) {
         StringJoiner joiner = new StringJoiner(" ");
-
         for (Map.Entry<String, ?> entry : context.entrySet()) {
             String value = String.valueOf(entry.getValue())
                     .replace("\\", "\\\\")
@@ -218,45 +156,30 @@ public final class AppLoggerImpl implements AppLogger {
                     .replace("\n", "\\n")
                     .replace("\t", "\\t")
                     .replace("|", "\\|");
-
             joiner.add(entry.getKey() + "=" + value);
         }
-
         return joiner.toString();
     }
 
-
-    // Appends a formatted log line to the file, creating directories and the file when necessary.
-    // @param line, complete formatted log line
-    // Appends a formatted log line to the file, creating directories and the file when necessary.
     private void writeToFile(String line) {
         try {
             createParentDirectories(logFile.toAbsolutePath().getParent());
-
             Files.writeString(
                     logFile,
                     line,
                     StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND
-            );
+                    StandardOpenOption.APPEND);
         } catch (IOException | SecurityException exception) {
             reportLoggingFailure("Could not write to log file");
         }
     }
 
-    // Creates parent directories when a parent path exists.
     static void createParentDirectories(Path parent) throws IOException {
         if (parent != null) {
             Files.createDirectories(parent);
         }
     }
 
-    // Persists the structured event, including its associated user ID.
-    // @param occurredAt, time the event occurred
-    // @param level, event severity
-    // @param event, stable event name
-    // @param contextJson, serialized event details
-    // @param userId, associated user ID, or null for a system event
     private void writeToDatabase(
             LocalDateTime occurredAt,
             String level,
@@ -264,32 +187,29 @@ public final class AppLoggerImpl implements AppLogger {
             String contextJson,
             Long userId) {
 
+        if (logRepository == null) {
+            return; // bootstrap / file-only mode
+        }
+
         try {
             LogEntry entry = LogEntry.newEvent(
                     occurredAt,
                     level,
                     event,
                     contextJson,
-                    userId
-            );
-
+                    userId);
             logRepository.append(entry);
         } catch (RuntimeException exception) {
-            reportLoggingFailure("Could not persist log event: " + event
-                            + " (" + exception.getClass().getSimpleName() + ")"
-            );
+            reportLoggingFailure(
+                    "Could not persist log event: " + event
+                            + " (" + exception.getClass().getSimpleName() + ")");
         }
     }
 
-   // Reports a logging failure directly to stderr to avoid recursive logging.
-//    private void reportLoggingFailure(String message) {
-//        System.err.println("[LOGGING FAILURE] " + message);
-//    }
 
-    // Records logging failures in the file and database without recursive reporting.
     private void reportLoggingFailure(String message) {
-        LocalDateTime occurredAt = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
-
+        LocalDateTime occurredAt =
+                LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
         String timestamp = TIMESTAMP_FORMAT.format(occurredAt.atOffset(ZoneOffset.UTC));
 
         String safeMessage = String.valueOf(message)
@@ -298,7 +218,6 @@ public final class AppLoggerImpl implements AppLogger {
                 .replace("\n", "\\n")
                 .replace("|", "\\|");
 
-        // Attempt to write the diagnostic directly to the log file.
         String line = timestamp
                 + " | ERROR | logging.failure | message="
                 + safeMessage
@@ -306,34 +225,31 @@ public final class AppLoggerImpl implements AppLogger {
 
         try {
             createParentDirectories(logFile.toAbsolutePath().getParent());
-
             Files.writeString(
                     logFile,
                     line,
                     StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND
-            );
+                    StandardOpenOption.APPEND);
         } catch (IOException | SecurityException ignored) {
-            // Do not report this failure again to avoid recursion
+            // Avoid recursion.
         }
 
-        // Attempt to persist the diagnostic directly to the database.
+        if (logRepository == null) {
+            return;
+        }
+
         try {
             String contextJson = objectMapper.writeValueAsString(
-                    Map.of("message", message == null ? "" : message)
-            );
-
+                    Map.of("message", message == null ? "" : message));
             LogEntry entry = LogEntry.newEvent(
                     occurredAt,
                     "ERROR",
                     "logging.failure",
                     contextJson,
-                    null
-            );
-
+                    null);
             logRepository.append(entry);
         } catch (Exception ignored) {
-            // Do not report this failure again to avoid recursion.
+            // Avoid recursion.
         }
     }
 }
