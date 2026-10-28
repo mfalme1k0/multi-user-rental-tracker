@@ -1,13 +1,8 @@
 package com.rentaltracker.infrastructure;
 
-import com.rentaltracker.exception.DatabaseConnectionException;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.nio.file.Path;
 import java.sql.*;
 
@@ -190,72 +185,11 @@ class DatabaseManagerTest {
 
     // ==================== Migration & version tests ====================
 
-    @Test
-    @Disabled("Superseded by the agreed destructive legacy reset policy")
-    void initializeMigratesLegacyCaseSensitiveUsersTable() throws Exception {
-        Path db = tempDir.resolve("legacy.db");
-        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + db);
-             Statement s = c.createStatement()) {
-            s.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, "
-                    + "created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))");
-            s.execute("INSERT INTO users (username) VALUES ('owner'), ('bob')");
-        }
-        DatabaseManager manager = new DatabaseManager(db);
-        manager.initialize();
-        try (Connection c = manager.getConnection(); Statement s = c.createStatement()) {
-            assertThrows(SQLException.class,
-                    () -> s.execute("INSERT INTO users (username) VALUES ('BOB')"));
-            try (ResultSet rs = s.executeQuery("SELECT id FROM users WHERE username = 'bob'")) {
-                assertEquals(2, rs.getInt(1));
-            }
-        }
-        manager.initialize(); // idempotent
-    }
 
-    @Test
-    @Disabled("Superseded by the agreed destructive legacy reset policy")
-    void initializeRefusesToMigrateWhenCaseDuplicatesExist() throws Exception {
-        Path db = tempDir.resolve("dupes.db");
-        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + db);
-             Statement s = c.createStatement()) {
-            s.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, "
-                    + "created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))");
-            s.execute("INSERT INTO users (username) VALUES ('mfalme'), ('Mfalme')");
-        }
-        assertThrows(DatabaseConnectionException.class,
-                () -> new DatabaseManager(db).initialize());
-    }
 
-    @Test
-    @Disabled("Superseded by the agreed destructive legacy reset policy")
-    void initializeUpdatesVersionWhenUsersTableAlreadyUsesNoCase() throws Exception {
-        Path db = tempDir.resolve("already-no-case.db");
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db);
-             Statement statement = connection.createStatement()) {
-            statement.execute("""
-                CREATE TABLE users (
-                    id INTEGER PRIMARY KEY,
-                    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-                )
-                """);
-            statement.execute("INSERT INTO users (username) VALUES ('alice')");
-            statement.execute("PRAGMA user_version = 0");
-        }
-        DatabaseManager manager = new DatabaseManager(db);
-        manager.initialize();
-        try (Connection connection = manager.getConnection();
-             Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery("PRAGMA user_version")) {
-            assertTrue(resultSet.next());
-            assertEquals(DatabaseManager.SCHEMA_VERSION, resultSet.getInt(1));
-        }
-        try (Connection connection = manager.getConnection();
-             Statement statement = connection.createStatement()) {
-            assertThrows(SQLException.class, () ->
-                    statement.executeUpdate("INSERT INTO users (username, password) VALUES (\'ALICE\', \'test-hash\')"));
-        }
-    }
+
+
+
 
     @Test
     void initializeDoesNotDowngradeNewerSchemaVersion() throws Exception {
@@ -404,294 +338,22 @@ class DatabaseManagerTest {
 
     // ==================== Fault-injection tests ====================
 
-    @Test
-    @Disabled("Superseded by the agreed destructive legacy reset policy")
-    void migrationFailsWhenCaseOnlyDuplicatesExist() throws Exception {
-        Path db = tempDir.resolve("case-duplicates.db");
-        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + db);
-             Statement s = c.createStatement()) {
-            s.execute("""
-            CREATE TABLE users (
-                id INTEGER PRIMARY KEY,
-                username TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-            )
-            """);
-            s.execute("INSERT INTO users (username) VALUES ('Alice')");
-            s.execute("INSERT INTO users (username) VALUES ('alice')");
-        }
-
-        DatabaseManager manager = new DatabaseManager(db);
-
-        DatabaseConnectionException exception = assertThrows(
-                DatabaseConnectionException.class,
-                manager::initialize
-        );
-
-        assertTrue(
-                exception.getCause().getMessage().contains("differing only by case")
-                        || exception.getMessage().contains("differing only by case")
-        );
-    }
-
-    @Test
-    @Disabled("Superseded by the agreed destructive legacy reset policy")
-    void migrationFailurePreservesOriginalExceptionWhenRollbackSucceeds() throws Exception {
-        Path db = createLegacyDatabase("migration-failure.db");
-        FaultPlan plan = new FaultPlan();
-        plan.failMigrationInsert = true;
-
-        DatabaseManager manager = managerWithFaults(db, plan);
-
-        DatabaseConnectionException exception = assertThrows(
-                DatabaseConnectionException.class,
-                manager::initialize
-        );
-
-        assertEquals("Forced migration failure", exception.getCause().getMessage());
-        assertEquals(0, exception.getCause().getSuppressed().length);
-        assertTrue(plan.rollbackAttempted);
-    }
-
-    @Test
-    @Disabled("Superseded by the agreed destructive legacy reset policy")
-    void migrationFailureSuppressesRollbackFailure() throws Exception {
-        Path db = createLegacyDatabase("rollback-failure.db");
-        FaultPlan plan = new FaultPlan();
-        plan.failMigrationInsert = true;
-        plan.failRollback = true;
-
-        DatabaseManager manager = managerWithFaults(db, plan);
-
-        DatabaseConnectionException exception = assertThrows(
-                DatabaseConnectionException.class,
-                manager::initialize
-        );
-
-        Throwable original = exception.getCause();
-        assertEquals("Forced migration failure", original.getMessage());
-        assertEquals(1, original.getSuppressed().length);
-        assertEquals("Forced rollback failure", original.getSuppressed()[0].getMessage());
-        assertTrue(plan.rollbackAttempted);
-    }
-
-    @Test
-    void cleanupFailureIsRecordedWhenAutoCommitRestoreFails() throws Exception {
-        Path db = createLegacyDatabase("autocommit-failure.db");
-        FaultPlan plan = new FaultPlan();
-        plan.failGetAutoCommit = true;
-
-        DatabaseManager manager = managerWithFaults(db, plan);
-
-        DatabaseConnectionException exception = assertThrows(
-                DatabaseConnectionException.class,
-                manager::initialize
-        );
-
-        // The forced getAutoCommit failure should surface
-        assertTrue(
-                exception.getCause().getMessage().contains("Forced getAutoCommit failure")
-                        || exception.getMessage().contains("Forced getAutoCommit failure")
-        );
-    }
-
-    @Test
-    void foreignKeyReenableFailureIsRecorded() throws Exception {
-        Path db = createLegacyDatabase("fk-reenable-failure.db");
-        FaultPlan plan = new FaultPlan();
-        plan.failForeignKeyReenable = true;
-
-        DatabaseManager manager = managerWithFaults(db, plan);
-
-        DatabaseConnectionException exception = assertThrows(
-                DatabaseConnectionException.class,
-                manager::initialize
-        );
-
-        assertTrue(
-                exception.getCause().getMessage().contains("Forced foreign-key reenable failure")
-                        || exception.getMessage().contains("Forced foreign-key reenable failure")
-        );
-    }
-
-    @Test
-    @Disabled("Superseded by the agreed destructive legacy reset policy")
-    void migrationFailsWhenUsersTableCannotBeInspected() throws Exception {
-        Path db = createLegacyDatabase("missing-table.db");
-        FaultPlan plan = new FaultPlan();
-        plan.usersTableQueryReturnsNoRows = true;
-
-        DatabaseManager manager = managerWithFaults(db, plan);
-
-        DatabaseConnectionException exception = assertThrows(
-                DatabaseConnectionException.class,
-                manager::initialize
-        );
-
-        assertTrue(
-                exception.getCause().getMessage().contains("Cannot inspect users table")
-                        || exception.getMessage().contains("Cannot inspect users table")
-        );
-    }
-
-    @Test
-    @Disabled("Superseded by the agreed destructive legacy reset policy")
-    void migrationRollsBackWhenForeignKeyCheckFindsViolations() throws Exception {
-        Path db = createLegacyDatabase("fk-check-failure.db");
-        FaultPlan plan = new FaultPlan();
-        plan.failForeignKeyCheck = true;
-
-        DatabaseManager manager = managerWithFaults(db, plan);
-
-        DatabaseConnectionException exception = assertThrows(
-                DatabaseConnectionException.class,
-                manager::initialize
-        );
-
-        assertTrue(
-                exception.getCause().getMessage().contains("dangling foreign keys")
-                        || exception.getMessage().contains("dangling foreign keys")
-        );
-        assertTrue(plan.rollbackAttempted);
-    }
 
 
-// ==================== Fault injection helpers ====================
 
-    private static final class FaultPlan {
-        boolean failMigrationInsert;
-        boolean failRollback;
-        boolean failGetAutoCommit;
-        boolean failForeignKeyReenable;
-        boolean failForeignKeyCheck;
-        boolean usersTableQueryReturnsNoRows;
-        boolean rollbackAttempted;
-        int foreignKeyEnableAttempts;
-    }
 
-    private DatabaseManager managerWithFaults(Path db, FaultPlan plan) {
-        return new DatabaseManager(db, () -> connectionWithFaults(
-                DriverManager.getConnection("jdbc:sqlite:" + db), plan));
-    }
 
-    private static Connection connectionWithFaults(Connection delegate, FaultPlan plan) {
-        return (Connection) Proxy.newProxyInstance(
-                Connection.class.getClassLoader(),
-                new Class<?>[]{Connection.class},
-                (proxy, method, args) -> {
-                    String name = method.getName();
 
-                    if (name.equals("rollback") && method.getParameterCount() == 0) {
-                        plan.rollbackAttempted = true;
-                        if (plan.failRollback) {
-                            throw new SQLException("Forced rollback failure");
-                        }
-                    }
 
-                    if (name.equals("getAutoCommit") && method.getParameterCount() == 0) {
-                        if (plan.failGetAutoCommit) {
-                            throw new SQLException("Forced getAutoCommit failure");
-                        }
-                    }
 
-                    Object result = invoke(delegate, method, args);
 
-                    if (name.equals("createStatement") && result instanceof Statement stmt) {
-                        return statementWithFaults(stmt, plan);
-                    }
-                    return result;
-                });
-    }
 
-    private static Statement statementWithFaults(Statement delegate, FaultPlan plan) {
-        return (Statement) Proxy.newProxyInstance(
-                Statement.class.getClassLoader(),
-                new Class<?>[]{Statement.class},
-                (proxy, method, args) -> {
-                    String name = method.getName();
 
-                    if (name.equals("executeQuery") && args != null && args.length > 0
-                            && args[0] instanceof String sql) {
 
-                        String normalized = sql.trim().replaceAll("\\s+", " ").toLowerCase();
 
-                        if (normalized.contains("select sql from sqlite_master")
-                                && plan.usersTableQueryReturnsNoRows) {
-                            return emptyResultSet();
-                        }
 
-                        if (plan.failForeignKeyCheck
-                                && sql.equalsIgnoreCase("PRAGMA foreign_key_check")) {
-                            return resultSetWithRow();
-                        }
-                    }
 
-                    if (name.equals("execute") && args != null && args.length > 0
-                            && args[0] instanceof String sql) {
-
-                        String normalized = sql.trim().replaceAll("\\s+", " ").toUpperCase();
-
-                        if (plan.failMigrationInsert
-                                && normalized.startsWith("INSERT INTO USERS_NEW")) {
-                            throw new SQLException("Forced migration failure");
-                        }
-
-                        if (normalized.equals("PRAGMA FOREIGN_KEYS = ON")) {
-                            plan.foreignKeyEnableAttempts++;
-                            if (plan.failForeignKeyReenable && plan.foreignKeyEnableAttempts > 0) {
-                                throw new SQLException("Forced foreign-key reenable failure");
-                            }
-                        }
-                    }
-
-                    return invoke(delegate, method, args);
-                });
-    }
-
-    private static Object invoke(Object target, Method method, Object[] args) throws Throwable {
-        try {
-            return method.invoke(target, args);
-        } catch (InvocationTargetException e) {
-            throw e.getCause();
-        }
-    }
-
-    private static ResultSet emptyResultSet() {
-        return (ResultSet) Proxy.newProxyInstance(
-                ResultSet.class.getClassLoader(),
-                new Class<?>[]{ResultSet.class},
-                (proxy, method, args) -> {
-                    if (method.getName().equals("next")) return false;
-                    if (method.getName().equals("close")) return null;
-                    return defaultValue(method.getReturnType());
-                });
-    }
-
-    private static ResultSet resultSetWithRow() {
-        return (ResultSet) Proxy.newProxyInstance(
-                ResultSet.class.getClassLoader(),
-                new Class<?>[]{ResultSet.class},
-                (proxy, method, args) -> {
-                    if (method.getName().equals("next")) return true;
-                    if (method.getName().equals("close")) return null;
-                    return defaultValue(method.getReturnType());
-                });
-    }
-
-    private static Object defaultValue(Class<?> type) {
-        if (!type.isPrimitive() || type == void.class) return null;
-        if (type == boolean.class) return false;
-        if (type == int.class) return 0;
-        if (type == long.class) return 0L;
-        if (type == double.class) return 0.0;
-        if (type == float.class) return 0.0f;
-        if (type == short.class) return (short) 0;
-        if (type == byte.class) return (byte) 0;
-        if (type == char.class) return '\0';
-        return null;
-    }
-
-    // ==================== Helpers ====================
+// ==================== Helpers ====================
 
     private DatabaseManager createDatabase() {
         Path database = tempDir.resolve("rental-tracker.db");
@@ -700,23 +362,7 @@ class DatabaseManagerTest {
         return databaseManager;
     }
 
-    private Path createLegacyDatabase(String filename) throws Exception {
-        Path db = tempDir.resolve(filename);
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db);
-             Statement statement = connection.createStatement()) {
-            statement.execute("""
-                CREATE TABLE users (
-                    id INTEGER PRIMARY KEY,
-                    username TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL DEFAULT (
-                        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                    )
-                )
-                """);
-            statement.execute("INSERT INTO users (username) VALUES ('alice')");
-        }
-        return db;
-    }
+
 
     private DatabaseManager createDatabaseManagerForTest() {
         return new DatabaseManager(tempDir.resolve("reflection-test.db"));
