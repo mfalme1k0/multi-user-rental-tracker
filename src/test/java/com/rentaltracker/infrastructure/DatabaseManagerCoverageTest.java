@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Coverage-oriented tests for {@link DatabaseManager}: static helpers, transaction
@@ -69,8 +72,12 @@ class DatabaseManagerCoverageTest {
     }
 
     @Test
-    void isCaseSensitiveHandlesNullAndBlank() {
-        // Depending on implementation: null/blank should not NPE
+    void isCaseSensitiveWhenDefinitionIsNull() {
+        assertTrue(DatabaseManager.isCaseSensitive(null));
+    }
+
+    @Test
+    void isCaseSensitiveHandlesBlank() {
         assertDoesNotThrow(() -> DatabaseManager.isCaseSensitive(""));
         assertDoesNotThrow(() -> DatabaseManager.isCaseSensitive("CREATE TABLE t (c TEXT)"));
     }
@@ -105,7 +112,7 @@ class DatabaseManagerCoverageTest {
     }
 
     // -------------------------------------------------------------------------
-    // usersTableIsCaseSensitive / usersTableHasPassword via real SQLite
+    // usersTableIsCaseSensitive / usersTableHasPassword
     // -------------------------------------------------------------------------
 
     @Test
@@ -161,6 +168,37 @@ class DatabaseManagerCoverageTest {
         }
     }
 
+    /**
+     * Covers the try-with-resources close() failure branch (JaCoCo yellow diamond
+     * on the end of usersTableHasPassword).
+     */
+    @Test
+    void usersTableHasPasswordCoversResultSetCloseFailureWhenNoPasswordColumn() throws Exception {
+        Statement statement = mock(Statement.class);
+        ResultSet rows = mock(ResultSet.class);
+
+        when(statement.executeQuery("PRAGMA table_info(users)")).thenReturn(rows);
+        when(rows.next()).thenReturn(false);
+        doThrow(new SQLException("close failed")).when(rows).close();
+
+        assertThrows(SQLException.class,
+                () -> DatabaseManager.usersTableHasPassword(statement));
+    }
+
+    @Test
+    void usersTableHasPasswordCoversResultSetCloseFailureAfterPasswordFound() throws Exception {
+        Statement statement = mock(Statement.class);
+        ResultSet rows = mock(ResultSet.class);
+
+        when(statement.executeQuery("PRAGMA table_info(users)")).thenReturn(rows);
+        when(rows.next()).thenReturn(true);
+        when(rows.getString("name")).thenReturn("password");
+        doThrow(new SQLException("close failed")).when(rows).close();
+
+        assertThrows(SQLException.class,
+                () -> DatabaseManager.usersTableHasPassword(statement));
+    }
+
     // -------------------------------------------------------------------------
     // Transactions
     // -------------------------------------------------------------------------
@@ -189,7 +227,7 @@ class DatabaseManagerCoverageTest {
     }
 
     @Test
-    void beginCommitClearsActiveTransaction() throws Exception {
+    void beginCommitClearsActiveTransaction() {
         DatabaseManager manager = initializedManager("tx-commit.db");
         manager.beginTransaction();
         assertTrue(manager.isTransactionActive());
@@ -267,18 +305,26 @@ class DatabaseManagerCoverageTest {
     }
 
     @Test
+    void initializeIsIdempotentWhenSchemaAlreadyCurrent() {
+        Path db = tempDir.resolve("already-current.db");
+        DatabaseManager manager = new DatabaseManager(db);
+        manager.initialize();
+        assertDoesNotThrow(manager::initialize); // version < SCHEMA_VERSION is false
+    }
+
+    @Test
     void initializeDevelopmentDataIsIdempotent() throws Exception {
         Path db = tempDir.resolve("seed.db");
         DatabaseManager manager = new DatabaseManager(db);
         manager.initialize();
         manager.initializeDevelopmentData();
-        manager.initializeDevelopmentData(); // INSERT OR IGNORE
+        manager.initializeDevelopmentData();
 
         try (Connection connection = manager.getConnection();
              Statement statement = connection.createStatement();
              ResultSet users = statement.executeQuery("SELECT count(*) FROM users")) {
             assertTrue(users.next());
-            assertTrue(users.getLong(1) >= 2); // Alice + Bob from data.sql
+            assertTrue(users.getLong(1) >= 2);
         }
     }
 
@@ -302,7 +348,6 @@ class DatabaseManagerCoverageTest {
              Statement statement = connection.createStatement()) {
             assertEquals(DatabaseManager.SCHEMA_VERSION, pragmaUserVersion(statement));
             assertTrue(DatabaseManager.usersTableHasPassword(statement));
-            // Legacy reset drops old users
             assertEquals(0, scalar(statement, "SELECT count(*) FROM users"));
         }
     }
@@ -328,7 +373,6 @@ class DatabaseManagerCoverageTest {
         try (Connection connection = manager.getConnection();
              Statement statement = connection.createStatement()) {
             assertEquals(DatabaseManager.SCHEMA_VERSION, pragmaUserVersion(statement));
-            // Still the old table definition — no reset
             assertTrue(DatabaseManager.usersTableIsCaseSensitive(statement));
             assertEquals(1, scalar(statement, "SELECT count(*) FROM users"));
         }
@@ -359,7 +403,6 @@ class DatabaseManagerCoverageTest {
         }
     }
 
-    /** recordFailure is private — invoke for coverage of both arms. */
     private static Throwable invokeRecordFailure(
             Throwable original, SQLException cleanup) throws Exception {
         Method method = DatabaseManager.class.getDeclaredMethod(
