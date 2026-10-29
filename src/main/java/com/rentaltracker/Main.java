@@ -30,6 +30,8 @@ import com.rentaltracker.validation.RentalValidatorImpl;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.IntConsumer;
 
 public final class Main {
 
@@ -42,14 +44,21 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
-        int code = run(System.getProperty(DATABASE_PROPERTY, DEFAULT_DATABASE_FILE));
+        exitOnFailure(run(System.getProperty(DATABASE_PROPERTY, DEFAULT_DATABASE_FILE)), System::exit);
+    }
+
+    // The exit action is injected so tests can observe it without terminating the JVM.
+    static void exitOnFailure(int code, IntConsumer exit) {
         if (code != 0) {
-            System.exit(code);
+            exit.accept(code);
         }
     }
 
-
     static int run(String databasePath) {
+        return run(databasePath, shouldSeedDemoData());
+    }
+
+    static int run(String databasePath, boolean seedDemoData) {
         System.out.println("Multi-User Rental Tracker");
 
         Path path = Path.of(databasePath);
@@ -68,7 +77,7 @@ public final class Main {
                     "database_path", path.toString()));
 
             // Demo/reviewer seed (data.sql uses INSERT OR IGNORE — safe every start).
-            if (shouldSeedDemoData()) {
+            if (seedDemoData) {
                 databaseManager.initializeDevelopmentData();
                 logger.info(null, "app.demo_data_seeded", Map.of(
                         "database_path", path.toString()));
@@ -77,7 +86,7 @@ public final class Main {
             // An unusable database is unrecoverable (D23).
             logger.error(null, "app.database_init_failed", Map.of(
                     "database_path", path.toString(),
-                    "message", e.getMessage() != null ? e.getMessage() : ""), e);
+                    "message", Objects.toString(e.getMessage(), "")), e);
             System.err.println("Could not open the database. See log for details.");
             return 1;
         }
