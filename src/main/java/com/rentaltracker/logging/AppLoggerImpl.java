@@ -35,7 +35,7 @@ public final class AppLoggerImpl implements AppLogger {
     );
 
     private final Path logFile;
-  //nullable for file only read before db
+    //nullable for file only read before db
     private final LogRepository logRepository;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -240,7 +240,7 @@ public final class AppLoggerImpl implements AppLogger {
 
         try {
             String contextJson = objectMapper.writeValueAsString(
-                    Map.of("message", message == null ? "" : message));
+                    Map.of("message", String.valueOf(message)));
             LogEntry entry = LogEntry.newEvent(
                     occurredAt,
                     "ERROR",
