@@ -164,8 +164,7 @@ public final class DatabaseManager {
     }
 
       //Applies the checked-in development/demo seed after schema initialization.
-     //The script is separate from schema.sql so tests and production deployments
-     //can initialize an empty database without creating demo accounts.
+
     public void initializeDevelopmentData() {
         try (Connection connection = createConnection();
              InputStream input = DatabaseManager.class.getResourceAsStream("/data.sql")) {

@@ -6,7 +6,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.sql.*;
 
+import static com.rentaltracker.infrastructure.DatabaseManager.usersTableHasPassword;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class DatabaseManagerTest {
 
@@ -335,13 +337,111 @@ class DatabaseManagerTest {
 
         manager.rollbackTransaction();
     }
+    @Test
+    void usersTableHasPasswordReturnsFalseWhenResultSetIsEmpty()
+            throws SQLException {
+        Statement statement = mock(Statement.class);
+        ResultSet resultSet = mock(ResultSet.class);
 
-    // ==================== Fault-injection tests ====================
+        when(statement.executeQuery("PRAGMA table_info(users)"))
+                .thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(false);
 
+        assertFalse(usersTableHasPassword(statement));
+    }
 
+    @Test
+    void usersTableHasPasswordPropagatesQueryFailure()
+            throws SQLException {
+        Statement statement = mock(Statement.class);
 
+        when(statement.executeQuery("PRAGMA table_info(users)"))
+                .thenThrow(new SQLException("Query failed"));
 
+        assertThrows(
+                SQLException.class,
+                () -> usersTableHasPassword(statement)
+        );
+    }
 
+    @Test
+    void usersTableHasPasswordReturnsFalseWhenPasswordColumnIsAbsent()
+            throws SQLException {
+        Statement statement = mock(Statement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+
+        when(statement.executeQuery("PRAGMA table_info(users)"))
+                .thenReturn(resultSet);
+
+        when(resultSet.next()).thenReturn(true, false);
+        when(resultSet.getString("name")).thenReturn("username");
+
+        assertFalse(usersTableHasPassword(statement));
+    }
+
+    @Test
+    void usersTableHasPasswordReturnsTrueWhenPasswordColumnExists()
+            throws SQLException {
+        Statement statement = mock(Statement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+
+        when(statement.executeQuery("PRAGMA table_info(users)"))
+                .thenReturn(resultSet);
+
+        when(resultSet.next()).thenReturn(true);
+        when(resultSet.getString("name")).thenReturn("password");
+
+        assertTrue(usersTableHasPassword(statement));
+    }
+
+    @Test
+    void usersTableHasPasswordSuppressesCloseFailureWhenQueryFails()
+            throws SQLException {
+        Statement statement = mock(Statement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+
+        SQLException queryFailure = new SQLException("Read failed");
+        SQLException closeFailure = new SQLException("Close failed");
+
+        when(statement.executeQuery("PRAGMA table_info(users)"))
+                .thenReturn(resultSet);
+        when(resultSet.next()).thenThrow(queryFailure);
+
+        doThrow(closeFailure)
+                .when(resultSet).close();
+
+        SQLException thrown = assertThrows(
+                SQLException.class,
+                () -> usersTableHasPassword(statement)
+        );
+
+        assertSame(queryFailure, thrown);
+        assertEquals(1, thrown.getSuppressed().length);
+        assertSame(closeFailure, thrown.getSuppressed()[0]);
+    }
+    @Test
+    void usersTableHasPasswordWhenResultSetCloseThrows() throws Exception {
+        Statement statement = mock(Statement.class);
+        ResultSet rows = mock(ResultSet.class);
+
+        when(statement.executeQuery("PRAGMA table_info(users)")).thenReturn(rows);
+        when(rows.next()).thenReturn(false);
+        doThrow(new SQLException("close failed")).when(rows).close();
+
+        assertThrows(SQLException.class,
+                () -> DatabaseManager.usersTableHasPassword(statement));
+    }
+    @Test
+    void usersTableHasPasswordCloseThrowsAfterPasswordFound() throws Exception {
+        Statement statement = mock(Statement.class);
+        ResultSet rows = mock(ResultSet.class);
+        when(statement.executeQuery("PRAGMA table_info(users)")).thenReturn(rows);
+        when(rows.next()).thenReturn(true);
+        when(rows.getString("name")).thenReturn("password");
+        doThrow(new SQLException("close failed")).when(rows).close();
+
+        assertThrows(SQLException.class, () -> usersTableHasPassword(statement));
+    }
 
 
 
