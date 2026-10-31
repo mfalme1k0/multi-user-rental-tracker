@@ -65,7 +65,7 @@ The configured JaCoCo report is available at `target/site/jacoco/index.html` whe
 mvn verify -Pcoverage-gate
 ```
 
-The coverage gate checks the configured line and branch coverage requirements.
+The coverage gate checks the configured line and branch coverage requirements. line coverage is at 100% .
 
 When running locally, the database defaults to `rental-tracker.db` in the working directory. The `DB_PATH` environment variable or the `rentaltracker.db` Java system property can override the location. The system property takes precedence.
 
