@@ -1,4 +1,4 @@
-# Multi-user Rental Tracker
+# Multi-user Rental Tracker.
 
 A Java command-line application for a shared rental library. Multiple users can register, list items for rent, browse other users' listings, rent items, and track returns. Data is stored in SQLite and persists between application runs.
 
