@@ -53,9 +53,9 @@ public final class SQLiteLogRepository implements LogRepository {
             insert.executeUpdate();
 
             try (ResultSet keys = insert.getGeneratedKeys()) {
-                if (!keys.next()) {
-                    throw new SQLException("Inserted log event did not return an ID");
-                }
+                // sqlite-jdbc always returns one row here (id 0 when nothing was inserted);
+                // the read-back below is what detects an insert that stored nothing.
+                keys.next();
                 long id = keys.getLong(1);
                 try (PreparedStatement select = connection.prepareStatement(selectSql)) {
                     select.setLong(1, id);

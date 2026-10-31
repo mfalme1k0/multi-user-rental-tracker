@@ -11,27 +11,45 @@ import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-
+import java.util.function.Function;
 
 public final class ConsoleIO {
 
     private final BufferedReader in;
     private final PrintStream out;
-    private final Console console; // null unless a real terminal is attached
+
+    private final Function<String, char[]> passwordReader;
 
     public ConsoleIO(InputStream in, PrintStream out) {
-        this(in, out, null);
+        this(in, out, (Function<String, char[]>) null);
     }
 
-    private ConsoleIO(InputStream in, PrintStream out, Console console) {
+    private ConsoleIO(InputStream in, PrintStream out, Function<String, char[]> passwordReader) {
         this.in = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
         this.out = out;
-        this.console = console;
+        this.passwordReader = passwordReader;
     }
 
-//  Real stdin/stdout. Passwords are not echoed when a terminal is attached.
+    /** Real stdin/stdout. Passwords are not echoed when a terminal is attached. */
     public static ConsoleIO system() {
-        return new ConsoleIO(System.in, System.out, System.console());
+        return create(System.console(), System.in, System.out);
+    }
+
+   //for tests to pass a mock io
+    static ConsoleIO create(Console console, InputStream in, PrintStream out) {
+        Function<String, char[]> reader = null;
+        if (console != null) {
+            reader = prompt -> console.readPassword("%s", prompt);
+        }
+        return new ConsoleIO(in, out, reader);
+    }
+
+
+    static ConsoleIO withPasswordReader(
+            InputStream in,
+            PrintStream out,
+            Function<String, char[]> passwordReader) {
+        return new ConsoleIO(in, out, passwordReader);
     }
 
     public void println() {
@@ -51,15 +69,14 @@ public final class ConsoleIO {
         out.printf(format, args);
     }
 
-    // Prints the prompt and returns one line with surrounding whitespace removed.
     public String readLine(String prompt) {
         print(prompt);
         return readRaw().strip();
     }
-    //hide password input if a terminal is attached
+
     public String readPassword(String prompt) {
-        if (console != null) {
-            char[] chars = console.readPassword("%s", prompt);
+        if (passwordReader != null) {
+            char[] chars = passwordReader.apply(prompt);
             if (chars == null) {
                 throw new InputClosedException();
             }

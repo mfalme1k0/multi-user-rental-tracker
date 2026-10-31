@@ -93,12 +93,12 @@ The `users` table stores application accounts and the credentials required for a
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
-                                     id INTEGER PRIMARY KEY,
-                                     username TEXT NOT NULL UNIQUE,
-                                     password TEXT NOT NULL,
-                                     created_at TEXT NOT NULL
-                                     DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-    );
+                                   id INTEGER PRIMARY KEY,
+                                   username TEXT NOT NULL UNIQUE,
+                                   password TEXT NOT NULL,
+                                   created_at TEXT NOT NULL
+                                   DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
 ```
 
 ### Constraints
@@ -155,33 +155,33 @@ The `listed_items` table stores items that users have listed for rental.
 
 ```sql
 CREATE TABLE IF NOT EXISTS listed_items (
-                                            id INTEGER PRIMARY KEY,
-                                            owner_id INTEGER NOT NULL,
-                                            name TEXT NOT NULL,
-                                            description TEXT,
-                                            cost_per_day TEXT NOT NULL CHECK (
-                                            cost_per_day NOT GLOB '*[^0-9.]*'
-                                            AND length(cost_per_day) > 0
-    AND length(cost_per_day)
-    - length(replace(cost_per_day, '.', '')) <= 1
-    AND substr(cost_per_day, 1, 1) GLOB '[0-9]'
-    AND substr(cost_per_day, -1, 1) GLOB '[0-9]'
-    AND replace(
-                   replace(cost_per_day, '0', ''),
-    '.',
-    ''
-    ) <> ''
-    ),
-    status TEXT NOT NULL CHECK (
-                                   status IN ('available', 'rented', 'unlisted')
-    ),
-    created_at TEXT NOT NULL
-    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                                          id INTEGER PRIMARY KEY,
+                                          owner_id INTEGER NOT NULL,
+                                          name TEXT NOT NULL,
+                                          description TEXT,
+                                          cost_per_day TEXT NOT NULL CHECK (
+                                          cost_per_day NOT GLOB '*[^0-9.]*'
+                                          AND length(cost_per_day) > 0
+  AND length(cost_per_day)
+  - length(replace(cost_per_day, '.', '')) <= 1
+  AND substr(cost_per_day, 1, 1) GLOB '[0-9]'
+  AND substr(cost_per_day, -1, 1) GLOB '[0-9]'
+  AND replace(
+               replace(cost_per_day, '0', ''),
+  '.',
+  ''
+  ) <> ''
+  ),
+  status TEXT NOT NULL CHECK (
+                               status IN ('available', 'rented', 'unlisted')
+  ),
+  created_at TEXT NOT NULL
+  DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
 
-    FOREIGN KEY (owner_id)
-    REFERENCES users(id)
-    ON DELETE RESTRICT
-    );
+  FOREIGN KEY (owner_id)
+  REFERENCES users(id)
+  ON DELETE RESTRICT
+  );
 ```
 
 ### `owner_id`
@@ -270,25 +270,25 @@ When an item is rented again after a previous rental has been closed, a new rent
 
 ```sql
 CREATE TABLE IF NOT EXISTS rentals (
-                                       id INTEGER PRIMARY KEY,
-                                       item_id INTEGER NOT NULL,
-                                       renter_id INTEGER NOT NULL,
-                                       start_time TEXT NOT NULL,
-                                       end_time TEXT NOT NULL,
-                                       returned_at TEXT,
-                                       status TEXT NOT NULL CHECK (
-                                       status IN ('active', 'closed')
-    ),
-    CHECK (end_time > start_time),
+                                     id INTEGER PRIMARY KEY,
+                                     item_id INTEGER NOT NULL,
+                                     renter_id INTEGER NOT NULL,
+                                     start_time TEXT NOT NULL,
+                                     end_time TEXT NOT NULL,
+                                     returned_at TEXT,
+                                     status TEXT NOT NULL CHECK (
+                                     status IN ('active', 'closed')
+  ),
+  CHECK (end_time > start_time),
 
-    FOREIGN KEY (item_id)
-    REFERENCES listed_items(id)
-    ON DELETE RESTRICT,
+  FOREIGN KEY (item_id)
+  REFERENCES listed_items(id)
+  ON DELETE RESTRICT,
 
-    FOREIGN KEY (renter_id)
-    REFERENCES users(id)
-    ON DELETE RESTRICT
-    );
+  FOREIGN KEY (renter_id)
+  REFERENCES users(id)
+  ON DELETE RESTRICT
+  );
 ```
 
 ### `item_id`
@@ -414,9 +414,9 @@ The database contains a partial unique index:
 
 ```sql
 CREATE UNIQUE INDEX IF NOT EXISTS
-    idx_rentals_one_active_per_item
-    ON rentals(item_id)
-    WHERE status = 'active';
+  idx_rentals_one_active_per_item
+  ON rentals(item_id)
+  WHERE status = 'active';
 ```
 
 This enforces the rule that an item can have at most one active rental at a time.
@@ -822,13 +822,13 @@ The database path must therefore be configurable so local development and Docker
 
 ## 14. Seed Database
 
-The development seed database is located at:
+The development seed script is located at:
 
 ```text
-data/rental-tracker.db
+src/main/resources/data.sql
 ```
 
-When using Docker, the active database must instead be located at the configured path backed by the persistent volume, for example:
+When using Docker, the active SQLite database is located at the configured path backed by the persistent volume, for example:
 
 ```text
 /data/rental-tracker.db
@@ -852,18 +852,15 @@ The seed database is development/demo data. Seeded accounts must use password ha
 ### Seed-data creation
 
 1. Create a fresh SQLite database.
-2. Apply `src/main/resources/schema.sql`.
-3. Insert at least two valid users with password hashes.
-4. Insert at least six listed items distributed among the users.
-5. Insert any required rental/demo records.
-6. Verify that all database constraints pass.
-7. Save the development seed database as `data/rental-tracker.db`, if the team maintains a checked-in seed database.
+2. Apply `src/main/resources/schema.sql` through `DatabaseManager.initialize()`.
+3. Apply `src/main/resources/data.sql` through `DatabaseManager.initializeDevelopmentData()`.
+4. Verify that all database constraints pass and that at least two users and six listings exist.
 
-If the application initializes a database at runtime, it must use an idempotent seed strategy rather than blindly reinserting the same records on every launch.
+The repository includes `src/main/resources/data.sql` for the development/demo seed. After `DatabaseManager.initialize()` has created or upgraded the schema, the application startup path calls `initializeDevelopmentData()`, which executes this script. Its fixed demo IDs and `INSERT OR IGNORE` statements make repeated startup safe and prevent it from overwriting existing records. Repository and infrastructure tests intentionally call schema initialization alone unless they are testing the seed path.
 
 The seed data must not overwrite existing account credentials, items, or rental history.
 
-`schema.sql` remains the authoritative definition of the database structure and constraints. The seed database is data, not a second schema definition.
+`schema.sql` remains the authoritative definition of the database structure and constraints. `data.sql` is data only, not a second schema definition.
 
 ---
 
@@ -1034,32 +1031,32 @@ The database layer provides the persistence foundation for authentication, item 
 
 Mark an item as complete only when its implementation and relevant tests have been verified.
 
-- [ ] SQLite database integration.
-- [ ] Configurable database path.
-- [ ] `DatabaseManager`.
-- [ ] `users` table with password-hash storage.
-- [ ] `listed_items` table.
-- [ ] `rentals` table.
-- [ ] Idempotent table and index creation.
-- [ ] Primary keys.
-- [ ] Foreign keys.
-- [ ] `ON DELETE RESTRICT`.
-- [ ] Username uniqueness.
-- [ ] Item status constraints.
-- [ ] Rental status constraints.
-- [ ] Monetary value validation.
-- [ ] Rental duration validation.
-- [ ] One-active-rental-per-item constraint.
-- [ ] UTC timestamp storage.
-- [ ] Safe schema initialization on repeated launches.
-- [ ] Idempotent seed-data initialization.
-- [ ] Explicit SQLite foreign-key enforcement.
-- [ ] Repository connection lifecycle.
-- [ ] Transaction-aware connection management.
-- [ ] Commit and rollback handling.
-- [ ] Nested transaction handling.
-- [ ] Seed data with at least two users and six listed items.
-- [ ] Persistence testing using real SQLite.
+- [x] SQLite database integration.
+- [x] Configurable database path.
+- [x] `DatabaseManager`.
+- [x] `users` table with password-hash storage.
+- [x] `listed_items` table.
+- [x] `rentals` table.
+- [x] Idempotent table and index creation.
+- [x] Primary keys.
+- [x] Foreign keys.
+- [x] `ON DELETE RESTRICT`.
+- [x] Username uniqueness.
+- [x] Item status constraints.
+- [x] Rental status constraints.
+- [x] Monetary value validation.
+- [x] Rental duration validation.
+- [x] One-active-rental-per-item constraint.
+- [x] UTC timestamp storage.
+- [x] Safe schema initialization on repeated launches.
+- [x] Idempotent seed-data initialization.
+- [x] Explicit SQLite foreign-key enforcement.
+- [x] Repository connection lifecycle.
+- [x] Transaction-aware connection management.
+- [x] Commit and rollback handling.
+- [x] Nested transaction handling.
+- [x] Seed data with at least two users and six listed items.
+- [x] Persistence testing using real SQLite.
 - [ ] Docker configuration with persistent database storage.
 - [ ] Persistence verification after container restart.
 

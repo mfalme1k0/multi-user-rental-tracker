@@ -22,13 +22,13 @@ class SQLiteUserRepositoryTest {
     void insertReturnsUserWithGeneratedIdAndCreatedAt() {
         SQLiteUserRepository repository = createRepository();
 
-        User user = User.newUser("alice");
+        User user = User.newUser("alice", "test-hash");
 
         User saved = repository.insert(user);
 
         assertNotNull(saved.id());
         assertEquals("alice", saved.username());
-        assertNull(saved.password());
+        assertEquals("test-hash", saved.password());
         assertNotNull(saved.createdAt());
     }
 
@@ -36,11 +36,11 @@ class SQLiteUserRepositoryTest {
     void insertRejectsDuplicateUsername() {
         SQLiteUserRepository repository = createRepository();
 
-        repository.insert(User.newUser("alice"));
+        repository.insert(User.newUser("alice", "test-hash"));
 
         assertThrows(
                 UniqueConstraintException.class,
-                () -> repository.insert(User.newUser("alice"))
+                () -> repository.insert(User.newUser("alice", "test-hash"))
         );
     }
 
@@ -76,7 +76,7 @@ class SQLiteUserRepositoryTest {
     void findByIdReturnsUserWhenUserExists() {
         SQLiteUserRepository repository = createRepository();
 
-        User saved = repository.insert(User.newUser("alice"));
+        User saved = repository.insert(User.newUser("alice", "test-hash"));
 
         var result = repository.findById(saved.id());
 
@@ -97,7 +97,7 @@ class SQLiteUserRepositoryTest {
     void findByUsernameReturnsUserWhenUserExists() {
         SQLiteUserRepository repository = createRepository();
 
-        User saved = repository.insert(User.newUser("alice"));
+        User saved = repository.insert(User.newUser("alice", "test-hash"));
 
         var result = repository.findByUsername("alice");
 
@@ -118,8 +118,8 @@ class SQLiteUserRepositoryTest {
     void findFirstReturnsLowestIdUser() {
         SQLiteUserRepository repository = createRepository();
 
-        User alice = repository.insert(User.newUser("alice"));
-        repository.insert(User.newUser("bob"));
+        User alice = repository.insert(User.newUser("alice", "test-hash"));
+        repository.insert(User.newUser("bob", "test-hash"));
 
         var result = repository.findFirst();
 
@@ -140,7 +140,7 @@ class SQLiteUserRepositoryTest {
     void getByIdReturnsUserWhenUserExists() {
         SQLiteUserRepository repository = createRepository();
 
-        User saved = repository.insert(User.newUser("alice"));
+        User saved = repository.insert(User.newUser("alice", "test-hash"));
 
         User result = repository.getById(saved.id());
 
@@ -161,19 +161,19 @@ class SQLiteUserRepositoryTest {
     void insertRejectsUsernameDifferingOnlyByCase() {
         SQLiteUserRepository repository = createRepository();
 
-        repository.insert(User.newUser("bob"));
+        repository.insert(User.newUser("bob", "test-hash"));
 
         assertThrows(UniqueConstraintException.class,
-                () -> repository.insert(User.newUser("Bob")));
+                () -> repository.insert(User.newUser("Bob", "test-hash")));
         assertThrows(UniqueConstraintException.class,
-                () -> repository.insert(User.newUser("BOB")));
+                () -> repository.insert(User.newUser("BOB", "test-hash")));
     }
 
     @Test
     void findByUsernameIgnoresCase() {
         SQLiteUserRepository repository = createRepository();
 
-        User saved = repository.insert(User.newUser("mfalme"));
+        User saved = repository.insert(User.newUser("mfalme", "test-hash"));
 
         var result = repository.findByUsername("Mfalme");
 
