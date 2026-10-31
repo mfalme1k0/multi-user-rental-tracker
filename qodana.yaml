@@ -1,0 +1,8 @@
+version: "1.0"
+linter: jetbrains/qodana-jvm
+projectJDK: "21"
+exclude:
+  - name: All
+    paths:
+      - target
+      - .github
