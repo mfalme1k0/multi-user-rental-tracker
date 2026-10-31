@@ -117,6 +117,41 @@ The application stores its SQLite database at `/data/rental-tracker.db` inside t
 
 **Warning:** `docker compose down -v` deletes the Compose-managed named volume and its database data. Use it only when you intentionally want to reset the database.
 
+#### View the application log file
+
+While the application container is still running, open another terminal and find the container:
+
+```bash
+docker ps
+```
+
+Then use the displayed container name or ID to open a shell:
+
+```bash
+docker exec -it multi-user-rental-tracker-app-run-<id> sh
+```
+
+Inside the container, view the most recent log entries:
+
+```bash
+tail -n 100 /data/rental-tracker.log
+```
+
+To follow new log entries continuously:
+
+```bash
+tail -f /data/rental-tracker.log
+```
+
+You can also read the file directly without opening a shell:
+
+```bash
+docker exec multi-user-rental-tracker-app-run-<id> \
+  tail -n 100 /data/rental-tracker.log
+```
+
+The exact container name may differ, so use the name or ID shown by `docker ps`.
+
 #### Troubleshooting
 
 Check the resolved Compose configuration:
@@ -344,6 +379,8 @@ mvn verify -Pcoverage-gate
 ```
 
 The project targets 100% line and branch coverage. Investigate uncovered code and document any justified gaps.
+
+Branch coverage is 99.71% (346/347). The single missed branch is a compiler-generated path in `DatabaseManager.usersTableHasPassword` for try-with-resources when `ResultSet.close()` fails. All observable behaviours of the method (password column present/absent, empty pragma result, query failure, and close failures including suppressed close-on-error) are covered by unit tests. Line and instruction coverage are 100%. We do not treat synthetic `AutoCloseable` close edges as application logic requiring a hard fail on the coverage gate.
 
 ## Seed data and deliverables
 
