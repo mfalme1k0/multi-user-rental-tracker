@@ -313,6 +313,56 @@ public class SQLiteItemRepository implements ItemRepository {
         }
     }
 
+    @Override
+    public List<Item> findMatches(
+            long ownerId,
+            String name,
+            BigDecimal costPerDay,
+            String normalisedDescription
+    ) {
+        String sql = """
+        SELECT
+            id,
+            owner_id,
+            name,
+            description,
+            cost_per_day,
+            status,
+            created_at
+        FROM listed_items
+        WHERE owner_id = ?
+          AND name = ?
+          AND cost_per_day = ?
+          AND LOWER(TRIM(description)) = ?
+        ORDER BY id ASC
+        """;
+
+        Connection connection = databaseManager.getConnection();
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setLong(1, ownerId);
+            statement.setString(2, name);
+            statement.setString(3, costPerDay.toPlainString());
+            statement.setString(4, normalisedDescription);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<Item> items = new ArrayList<>();
+
+                while (resultSet.next()) {
+                    items.add(mapItem(resultSet));
+                }
+
+                return items;
+            }
+
+        } catch (SQLException e) {
+            throw SQLiteExceptionTranslator.translate(e);
+        } finally {
+            databaseManager.releaseConnection(connection);
+        }
+    }
+
     private Item mapItem(ResultSet resultSet) {
         try {
             long id = resultSet.getLong("id");
