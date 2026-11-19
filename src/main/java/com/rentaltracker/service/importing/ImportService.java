@@ -286,7 +286,8 @@ public class ImportService {
                 summary.incrementMatched();
 
             } else {
-                rentalRepository.insert(
+             {
+                Rental inserted = rentalRepository.insert(
                         new Rental(
                                 null,
                                 localItemId,
@@ -297,8 +298,11 @@ public class ImportService {
                                 status
                         ));
 
+                requirePersistedId(inserted.id(), "inserted rental");
+
                 state = state.transitionTo(ImportState.INSERTED);
                 summary.incrementInserted();
+            }
             }
 
         } catch (RuntimeException e) {
