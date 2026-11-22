@@ -1224,13 +1224,37 @@ class ImportServiceTest {
         System.out.println("Matched: " + summary.matched());
         System.out.println("Rejected: " + summary.rejected());
 
-        assertEquals(1, summary.inserted());
-        assertEquals(1, summary.matched());
-        assertEquals(1, summary.rejected().size());
-        assertEquals(
-                "inserted rental was not assigned a database ID",
-                summary.rejected().getFirst().reason()
+        assertAll(
+                () -> assertEquals(1, summary.inserted()),
+                () -> assertEquals(1, summary.matched()),
+                () -> assertEquals(1, summary.rejectedCount()),
+                () -> assertEquals(3, summary.results().size()),
+
+                () -> assertEquals(
+                        new ImportRecordResult(
+                                "users.csv", 2,
+                                ImportRecordResult.Outcome.MATCHED, null
+                        ),
+                        summary.results().get(0)
+                ),
+                () -> assertEquals(
+                        new ImportRecordResult(
+                                "listed_items.csv", 2,
+                                ImportRecordResult.Outcome.INSERTED, null
+                        ),
+                        summary.results().get(1)
+                ),
+                () -> assertEquals(
+                        new ImportRecordResult(
+                                "rentals.csv", 2,
+                                ImportRecordResult.Outcome.REJECTED,
+                                "inserted rental was not assigned a database ID"
+                        ),
+                        summary.results().get(2)
+                )
+
         );
+
 
         verify(rentalRepository).insert(any(Rental.class));
     }

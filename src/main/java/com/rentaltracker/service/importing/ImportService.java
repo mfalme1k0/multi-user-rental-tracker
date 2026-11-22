@@ -99,7 +99,7 @@ public class ImportService {
                 userIdMap.put(externalId, localId);
 
                 state = state.transitionTo(ImportState.MATCHED);
-                summary.incrementMatched();
+                summary.recordMatched(USERS_FILE, row.lineNumber());
 
             } else {
                 User inserted = userRepository.insert(
@@ -111,7 +111,7 @@ public class ImportService {
                 userIdMap.put(externalId, localId);
 
                 state = state.transitionTo(ImportState.INSERTED);
-                summary.incrementInserted();
+                summary.recordInserted(USERS_FILE, row.lineNumber());
             }
 
         } catch (RuntimeException e) {
@@ -179,7 +179,7 @@ public class ImportService {
                 itemIdMap.put(externalId, localId);
 
                 state = state.transitionTo(ImportState.MATCHED);
-                summary.incrementMatched();
+                summary.recordMatched(ITEMS_FILE, row.lineNumber());
 
             } else {
                 Item inserted = itemRepository.insert(
@@ -199,7 +199,7 @@ public class ImportService {
                 itemIdMap.put(externalId, localId);
 
                 state = state.transitionTo(ImportState.INSERTED);
-                summary.incrementInserted();
+                summary.recordInserted(ITEMS_FILE, row.lineNumber());
             }
 
         } catch (RuntimeException e) {
@@ -283,10 +283,9 @@ public class ImportService {
 
             if (matches.size() == 1) {
                 state = state.transitionTo(ImportState.MATCHED);
-                summary.incrementMatched();
+                summary.recordMatched(RENTALS_FILE, row.lineNumber());
 
             } else {
-             {
                 Rental inserted = rentalRepository.insert(
                         new Rental(
                                 null,
@@ -301,9 +300,9 @@ public class ImportService {
                 requirePersistedId(inserted.id(), "inserted rental");
 
                 state = state.transitionTo(ImportState.INSERTED);
-                summary.incrementInserted();
+                summary.recordInserted(RENTALS_FILE, row.lineNumber());
             }
-            }
+
 
         } catch (RuntimeException e) {
             handleFailure(e, state, RENTALS_FILE,

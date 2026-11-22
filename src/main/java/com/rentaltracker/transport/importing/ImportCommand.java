@@ -4,7 +4,7 @@ package com.rentaltracker.transport.importing;
 import com.rentaltracker.service.importing.ImportBatch;
 import com.rentaltracker.service.importing.ImportService;
 import com.rentaltracker.service.importing.ImportSummary;
-import com.rentaltracker.service.importing.RejectedRecord;
+import com.rentaltracker.service.importing.ImportRecordResult;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -65,12 +65,21 @@ public final class ImportCommand {
                 summary.rejectedCount()
         );
 
-        if (summary.rejectedCount() > 0) {
-            System.out.println("Rejected:");
+        System.out.println("Record details:");
 
-            for (RejectedRecord record : summary.rejected()) {
-                System.out.println("  " + record);
+        for (ImportRecordResult result : summary.results()) {
+            System.out.printf(
+                    "  %s record %d: %s",
+                    result.fileName(),
+                    result.lineNumber(),
+                    result.outcome()
+            );
+
+            if (result.reason() != null) {
+                System.out.printf(" - %s", result.reason());
             }
+
+            System.out.println();
         }
     }
 }
