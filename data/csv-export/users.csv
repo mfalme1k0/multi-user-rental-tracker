@@ -1,0 +1,5 @@
+id,username,password,created_at
+1001,Alice,$2b$10$YSnKZxYA5nGSbsRj0A18heVW35Ph4KBDcd4yo/poFBlLLUruOoPBy,
+1002,Bob,$2b$10$ja4BkdP7ZBCBqYEt/s/Y3.HqsnI0rC6uzC71BeVzEJJOpQJRcGLyi,
+2001,Charlie,$2b$10$YSnKZxYA5nGSbsRj0A18heVW35Ph4KBDcd4yo/poFBlLLUruOoPBy,
+2002, ,$2b$10$YSnKZxYA5nGSbsRj0A18heVW35Ph4KBDcd4yo/poFBlLLUruOoPBy,

@@ -16,6 +16,9 @@ target/
 *.sqlite
 *.sqlite3
 
+# Committed demonstration database
+!data/
+!data/rental-tracker.db
 # Operating system files
 .vscode/
 .DS_Store
