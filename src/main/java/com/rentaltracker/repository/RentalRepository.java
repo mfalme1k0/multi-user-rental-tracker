@@ -45,4 +45,8 @@ public interface RentalRepository {
      * @throws com.rentaltracker.exception.NotFoundException when no row has this id
      */
     void updateStatus(long rentalId, RentalStatus status, LocalDateTime returnedAt);
+
+    List<Rental> findMatches(long itemId,
+                             long renterId,
+                             LocalDateTime startTime);
 }

@@ -1,0 +1,10 @@
+id,owner_id,name,description,cost_per_day,status,created_at
+1101,1001,Camping Tent,Four-person waterproof tent,18.00,available,
+1102,1001,Mountain Bike,Trail-ready mountain bike,25.00,available,
+1103,1001,Portable Projector,1080p portable projector,30.00,available,
+1201,1002,Pressure Washer,Electric pressure washer,22.50,available,
+1202,1002,Power Drill,Cordless drill with battery,12.00,available,
+1203,1002,Folding Tables,Set of two folding tables,15.00,available,
+2101,2001,Portable PA Speaker,,20.00,available,
+2998,9999,Unknown Owner Item,Should be rejected,10.00,available,
+2999,1001,,Missing required name,10.00,available,

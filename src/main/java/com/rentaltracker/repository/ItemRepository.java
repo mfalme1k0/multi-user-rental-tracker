@@ -4,6 +4,7 @@ import com.rentaltracker.domain.Item;
 import com.rentaltracker.domain.ItemStatus;
 import com.rentaltracker.domain.Page;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,4 +32,10 @@ public interface ItemRepository {
     boolean markRentedIfAvailable(long itemId);
 
     void updateStatus(long itemId, ItemStatus status);
+
+
+    List<Item> findMatches(long ownerId,
+                           String name,
+                           BigDecimal costPerDay,
+                           String normalisedDescription);
 }

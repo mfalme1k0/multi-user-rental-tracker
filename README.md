@@ -1,8 +1,8 @@
-# Multi-user Rental Tracker.
+# Multi-user Rental Tracker
 
 A Java command-line application for a shared rental library. Multiple users can register, list items for rent, browse other users' listings, rent items, and track returns. Data is stored in SQLite and persists between application runs.
 
-Built with Java 21+, Maven, SQLite, and a five-layer architecture enforced by ArchUnit. The project includes password hashing, authentication, ownership enforcement, centralized validation, structured logging, automated tests, and Docker support.
+Built with Java 21+, Maven, SQLite, and a five-layer architecture enforced by ArchUnit. The project includes password hashing, authentication, ownership enforcement, centralized validation, structured logging, automated tests, CSV data import, and Docker support.
 
 **Start here:**
 - [`docs/architecture.md`](docs/architecture.md) — Architecture, state machine, and design decisions.
@@ -20,6 +20,8 @@ Built with Java 21+, Maven, SQLite, and a five-layer architecture enforced by Ar
 | Validation | Centrally validate User, Item, and Rental data before repository operations. |
 | State machine | Enforce valid transitions between `AVAILABLE`, `RENTED`, and `UNLISTED`. |
 | Persistence | SQLite with foreign keys, `CHECK` constraints, and a partial unique index for active rentals. |
+| CSV import | Import users, listed items, and rentals from CSV files, resolving external IDs to local database IDs. |
+| Import reporting | Report every imported record as `MATCHED`, `INSERTED`, or `REJECTED`, including rejection reasons. |
 | Error handling | Display readable errors, log internal failures, and clean up resources. |
 | Logging | Structured events with timestamps, severity, event names, and contextual fields. |
 | Containerization | Docker execution with persistent SQLite storage. |
@@ -65,7 +67,7 @@ The configured JaCoCo report is available at `target/site/jacoco/index.html` whe
 mvn verify -Pcoverage-gate
 ```
 
-The coverage gate checks the configured line and branch coverage requirements. line coverage is at 100% .branch coverage is at 99%.
+The coverage gate currently requires 100% line and branch coverage. The project has not yet met both thresholds. See [Testing and coverage](#testing-and-coverage) for the last recorded results.
 
 When running locally, the database defaults to `rental-tracker.db` in the working directory. The `DB_PATH` environment variable or the `rentaltracker.db` Java system property can override the location. The system property takes precedence.
 
@@ -173,6 +175,157 @@ If the application fails to start, inspect the error output before rebuilding or
 
 The Dockerfile uses a multi-stage build. Maven and the JDK compiler are used during the build stage, while the final image uses a Java runtime. Maven dependencies are downloaded in a separate build layer so Docker can reuse that layer when the POM remains unchanged.
 
+## CSV data import
+
+The application supports importing users, listed items, and rentals from a directory containing three CSV files.
+
+The import is intended to merge exported data into an existing SQLite database. It resolves external IDs from the CSV files to the corresponding local database IDs, allowing imported rentals to reference the correct local items and users.
+
+### Required files
+
+The import directory must contain all three files:
+
+```text
+csv-export/
+├── users.csv
+├── listed_items.csv
+└── rentals.csv
+```
+
+The required CSV headers are:
+
+**`users.csv`**
+
+```csv
+id,username,password,created_at
+```
+
+**`listed_items.csv`**
+
+```csv
+id,owner_id,name,description,cost_per_day,status,created_at
+```
+
+**`rentals.csv`**
+
+```csv
+id,item_id,renter_id,start_time,end_time,returned_at,status
+```
+
+The `id` fields are external identifiers from the source database. They are used to resolve relationships during import rather than being assumed to be the destination database's primary keys.
+
+### Build the executable JAR
+
+From the project root:
+
+```bash
+mvn package
+```
+
+### Run an import
+
+The CLI accepts the CSV directory as an argument:
+
+```bash
+java -jar target/rental-tracker-0.1.0-SNAPSHOT.jar import data/csv-export
+```
+
+The import uses the database configured for the application. You can override the database location using the `rentaltracker.db` Java system property.
+
+**Recommended: use a working copy of the database for demonstrations.**
+
+For example, if `data/rental-tracker.db` is your pristine demonstration database:
+
+```bash
+cp data/rental-tracker.db /tmp/rental-tracker-working.db
+
+java -Drentaltracker.db=/tmp/rental-tracker-working.db \
+  -jar target/rental-tracker-0.1.0-SNAPSHOT.jar \
+  import data/csv-export
+```
+
+This allows you to inspect the imported data without modifying the original demonstration database.
+
+### How the import works
+
+The import processes the CSV files in dependency order:
+
+1. **Users:** Existing users are matched by username. New users are inserted when no matching username exists.
+2. **Listed items:** Each item's owner is resolved through the imported user mapping. Existing items are matched using their owner, name, daily cost, and description. Otherwise, valid new items are inserted.
+3. **Rentals:** The item and renter references are resolved to local database IDs. Existing rentals are matched using their resolved item, renter, and start time. Otherwise, valid new rentals are inserted.
+
+The importer maintains mappings between external identifiers and local database identifiers. This is important because an inserted user or item may receive a different primary key in the destination database.
+
+### Validation and rejected records
+
+Invalid records are rejected individually. A rejected record does not prevent subsequent valid records from being processed.
+
+Examples of validation failures include:
+
+- Blank required usernames.
+- Unknown owner IDs.
+- Blank required item names.
+- Rentals referencing items or renters that cannot be resolved.
+- Invalid values that violate the import validation rules.
+
+Blank nullable item descriptions are normalized to SQL `NULL`.
+
+Existing password hashes are carried across unchanged. The importer does not hash an already-hashed password again.
+
+### Import report
+
+The CLI prints aggregate totals and a result for every CSV data record.
+
+Each record is reported as one of:
+
+- `MATCHED` — A corresponding record already exists in the destination database.
+- `INSERTED` — A new record was successfully inserted.
+- `REJECTED` — The record could not be imported. Its rejection reason is displayed.
+
+For example, the demonstration import produces:
+
+```text
+Import complete: inserted=4 matched=8 rejected=4
+Record details:
+  users.csv record 1: MATCHED
+  users.csv record 2: MATCHED
+  users.csv record 3: INSERTED
+  users.csv record 4: REJECTED - username must not be blank
+  listed_items.csv record 1: MATCHED
+  listed_items.csv record 7: INSERTED
+  listed_items.csv record 8: REJECTED - owner external id 9999 could not be resolved
+  rentals.csv record 1: INSERTED
+  rentals.csv record 2: REJECTED - item external id 9999 could not be resolved
+```
+
+The example is abbreviated; the actual CLI reports every record, including all matched, inserted, and rejected records.
+
+Record numbers refer to CSV data-record positions, excluding the header. They are not necessarily physical file line numbers when CSV fields contain embedded newlines.
+
+A successful import can contain rejected records. The aggregate summary makes those rejections visible rather than silently skipping invalid data.
+
+### Repeat imports
+
+The importer is designed to avoid inserting duplicate records when the same CSV data is imported again.
+
+A repeat import should report existing records as `MATCHED` instead of inserting them again. Invalid records remain rejected and retain their rejection reasons.
+
+The demonstration dataset has been tested with a first import and a repeat import. The first import produced:
+
+```text
+inserted=4 matched=8 rejected=4
+```
+
+The repeat import produced:
+
+```text
+inserted=0 matched=12 rejected=4
+```
+
+The working database checksum was identical before and after the repeat import, confirming that the second import made no database changes.
+
+The import runs within a transaction. Record-level validation failures are reported individually; fatal import failures cause the transaction to roll back.
+
 ## Project structure
 
 ```text
@@ -207,6 +360,13 @@ docs/
 ├── architecture.md
 ├── database-design.md
 └── er-diagram.png
+
+data/
+├── rental-tracker.db
+└── csv-export/
+    ├── users.csv
+    ├── listed_items.csv
+    └── rentals.csv
 
 Dockerfile
 compose.yaml
@@ -333,7 +493,7 @@ Reject invalid input, including:
 - Negative rental costs.
 - Rental durations below one day.
 - Missing items.
-- Attempts to rent one's own item.
+- Attempts to rent one's own items.
 - Attempts to modify another user's item or confirm a return without ownership.
 
 Display concise, user-friendly error messages instead of database error codes or stack traces. Record internal diagnostic details in structured logs without exposing sensitive information.
@@ -358,7 +518,7 @@ Log significant rental events, validation failures, exceptions, and relevant dat
 
 ## Testing and coverage
 
-Tests should cover CRUD operations, state transitions, authentication, validation, ownership enforcement, logging, failure handling, and resource cleanup.
+Tests should cover CRUD operations, state transitions, authentication, validation, ownership enforcement, logging, failure handling, resource cleanup, CSV parsing, import matching, ID resolution, rejection handling, and repeat-import behavior.
 
 Use real SQLite databases with isolated, known state for integration tests. Verify resulting database state rather than relying solely on service return values.
 
@@ -378,18 +538,33 @@ Run the configured coverage gate:
 mvn verify -Pcoverage-gate
 ```
 
-The project targets 100% line and branch coverage. Investigate uncovered code and document any justified gaps.
+### Current coverage status
 
-Branch coverage is 99.71% (346/347). The single missed branch is a compiler-generated path in `DatabaseManager.usersTableHasPassword` for try-with-resources when `ResultSet.close()` fails. All observable behaviours of the method (password column present/absent, empty pragma result, query failure, and close failures including suppressed close-on-error) are covered by unit tests. Line and instruction coverage are 100%. We do not treat synthetic `AutoCloseable` close edges as application logic requiring a hard fail on the coverage gate.
+The project targets 100% line and branch coverage. This is a target, not an achieved result.
+
+The last recorded JaCoCo results, before the latest CSV import reporting changes, were:
+
+| Metric | Last recorded result |
+|---|---:|
+| Line coverage | 100% |
+| Instruction coverage | 100% |
+| Branch coverage | 99.71% (346/347) |
+
+The one uncovered branch was associated with a compiler-generated try-with-resources cleanup path in `DatabaseManager.usersTableHasPassword`, specifically the path where `ResultSet.close()` fails.
+
+The method's observable behaviors—including password-column presence or absence, an empty PRAGMA result, query failures, and close failures—were covered by tests. The remaining missed branch was identified as compiler-generated cleanup behavior rather than an untested application decision.
+
+The configured coverage gate nevertheless requires 100% for both line and branch coverage. Therefore, the last recorded branch coverage did not satisfy the gate. Coverage must be measured again after subsequent changes before these figures can be treated as current.
 
 ## Seed data and deliverables
 
-The completed project must include:
+The project includes or is intended to include:
 
 - A working CLI application and passing tests.
 - A JaCoCo coverage report.
 - A Dockerfile and persistent SQLite volume configuration.
 - `src/main/resources/data.sql` with at least two users and six listed items distributed across them, applied automatically at startup without overwriting existing data.
+- A demonstration SQLite database and CSV exports for import demonstrations.
 - An ER diagram showing all four tables, their columns, types, constraints, and relationships.
 - Git history demonstrating teamwork through reviewed pull requests, focused commits, and clear commit messages.
 

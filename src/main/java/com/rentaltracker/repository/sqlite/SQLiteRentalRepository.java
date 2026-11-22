@@ -349,6 +349,56 @@ public class SQLiteRentalRepository implements RentalRepository {
             databaseManager.releaseConnection(connection);
         }
     }
+
+    @Override
+    public List<Rental> findMatches(
+            long itemId,
+            long renterId,
+            LocalDateTime startTime
+    ) {
+        String sql = """
+        SELECT
+            id,
+            item_id,
+            renter_id,
+            start_time,
+            end_time,
+            returned_at,
+            status
+        FROM rentals
+        WHERE item_id = ?
+          AND renter_id = ?
+          AND start_time = ?
+        ORDER BY id ASC
+        """;
+
+        Connection connection = databaseManager.getConnection();
+
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setLong(1, itemId);
+            statement.setLong(2, renterId);
+            statement.setString(
+                    3,
+                    startTime.atOffset(ZoneOffset.UTC).toString()
+            );
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<Rental> rentals = new ArrayList<>();
+
+                while (resultSet.next()) {
+                    rentals.add(mapRental(resultSet));
+                }
+
+                return rentals;
+            }
+
+        } catch (SQLException e) {
+            throw SQLiteExceptionTranslator.translate(e);
+        } finally {
+            databaseManager.releaseConnection(connection);
+        }
+    }
     private Rental mapRental(ResultSet resultSet) {
         try {
             long id = resultSet.getLong("id");
