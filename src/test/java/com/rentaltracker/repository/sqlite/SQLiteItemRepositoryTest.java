@@ -401,4 +401,75 @@ class SQLiteItemRepositoryTest {
 
         assertTrue(repository.findById(999L).isEmpty());
     }
+
+    @Test
+    void findMatchesIgnoresDescriptionCapitalization() {
+        DatabaseManager databaseManager = createDatabase();
+
+        SQLiteUserRepository userRepository =
+                new SQLiteUserRepository(databaseManager);
+
+        SQLiteItemRepository itemRepository =
+                new SQLiteItemRepository(databaseManager);
+
+        User owner = userRepository.insert(
+                User.newUser("alice", "test-hash")
+        );
+
+        Item saved = itemRepository.insert(
+                Item.newListing(
+                        owner.id(),
+                        "Mountain Bike",
+                        "A red mountain bike",
+                        new BigDecimal("100.00")
+                )
+        );
+
+        List<Item> matches = itemRepository.findMatches(
+                owner.id(),
+                "Mountain Bike",
+                new BigDecimal("100.00"),
+                "A RED MOUNTAIN BIKE"
+        );
+
+        assertEquals(1, matches.size());
+        assertEquals(saved.id(), matches.getFirst().id());
+    }
+
+    @Test
+    void findMatchesMatchesNullDescriptions() {
+        DatabaseManager databaseManager = createDatabase();
+
+        SQLiteUserRepository userRepository =
+                new SQLiteUserRepository(databaseManager);
+
+        SQLiteItemRepository itemRepository =
+                new SQLiteItemRepository(databaseManager);
+
+        User owner = userRepository.insert(
+                User.newUser("alice", "test-hash")
+        );
+
+        Item saved = itemRepository.insert(
+                new Item(
+                        null,
+                        owner.id(),
+                        "Portable Speaker",
+                        null,
+                        new BigDecimal("100.00"),
+                        ItemStatus.AVAILABLE,
+                        null
+                )
+        );
+
+        List<Item> matches = itemRepository.findMatches(
+                owner.id(),
+                "Portable Speaker",
+                new BigDecimal("100.00"),
+                null
+        );
+
+        assertEquals(1, matches.size());
+        assertEquals(saved.id(), matches.getFirst().id());
+    }
 }

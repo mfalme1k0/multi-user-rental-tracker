@@ -333,7 +333,10 @@ public class SQLiteItemRepository implements ItemRepository {
         WHERE owner_id = ?
           AND name = ?
           AND cost_per_day = ?
-          AND LOWER(TRIM(description)) = ?
+          AND (
+              (description IS NULL AND ? IS NULL)
+              OR LOWER(TRIM(description)) = LOWER(TRIM(?))
+          )
         ORDER BY id ASC
         """;
 
@@ -345,7 +348,7 @@ public class SQLiteItemRepository implements ItemRepository {
             statement.setString(2, name);
             statement.setString(3, costPerDay.toPlainString());
             statement.setString(4, normalisedDescription);
-
+            statement.setString(5, normalisedDescription);
             try (ResultSet resultSet = statement.executeQuery()) {
                 List<Item> items = new ArrayList<>();
 
