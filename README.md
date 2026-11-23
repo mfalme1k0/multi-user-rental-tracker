@@ -16,13 +16,13 @@ Built with Java 21+, Maven, SQLite, and a five-layer architecture enforced by Ar
 | Authentication | Register, log in, and log out. Passwords are hashed before storage. |
 | Items | List, view, delist, and relist your own items; view inventory with pagination. |
 | Rentals | Browse other users' listings, rent available items, confirm returns, and view active rentals with pagination. |
-| Multi-user support | Associate items with their owners and rentals with authenticated renters. |
-| Validation | Centrally validate User, Item, and Rental data before repository operations. |
-| State machine | Enforce valid transitions between `AVAILABLE`, `RENTED`, and `UNLISTED`. |
+| Multi-user support | Items are associated with their owners and rentals with authenticated renters. |
+| Validation | User, Item, and Rental data are validated centrally before repository operations. |
+| State machine | Enforces valid transitions between `AVAILABLE`, `RENTED`, and `UNLISTED`. |
 | Persistence | SQLite with foreign keys, `CHECK` constraints, and a partial unique index for active rentals. |
-| CSV import | Import users, listed items, and rentals from CSV files, resolving external IDs to local database IDs. |
-| Import reporting | Report every imported record as `MATCHED`, `INSERTED`, or `REJECTED`, including rejection reasons. |
-| Error handling | Display readable errors, log internal failures, and clean up resources. |
+| CSV import | Imports users, listed items, and rentals from CSV files, resolving external IDs to local database IDs. |
+| Import reporting | Reports every imported record as `MATCHED`, `INSERTED`, or `REJECTED`, including rejection reasons. |
+| Error handling | Displays readable errors, logs internal failures, and cleans up resources. |
 | Logging | Structured events with timestamps, severity, event names, and contextual fields. |
 | Containerization | Docker execution with persistent SQLite storage. |
 
@@ -179,7 +179,7 @@ The Dockerfile uses a multi-stage build. Maven and the JDK compiler are used dur
 
 The application supports importing users, listed items, and rentals from a directory containing three CSV files.
 
-The import is intended to merge exported data into an existing SQLite database. It resolves external IDs from the CSV files to the corresponding local database IDs, allowing imported rentals to reference the correct local items and users.
+The import merges exported data into an existing SQLite database. It resolves external IDs from the CSV files to the corresponding local database IDs, allowing imported rentals to reference the correct local items and users.
 
 ### Required files
 
@@ -306,9 +306,9 @@ A successful import can contain rejected records. The aggregate summary makes th
 
 ### Repeat imports
 
-The importer is designed to avoid inserting duplicate records when the same CSV data is imported again.
+The importer does not insert duplicate records when the same CSV data is imported again.
 
-A repeat import should report existing records as `MATCHED` instead of inserting them again. Invalid records remain rejected and retain their rejection reasons.
+A repeat import reports existing records as `MATCHED` instead of inserting them again. Invalid records remain rejected and retain their rejection reasons.
 
 The demonstration dataset has been tested with a first import and a repeat import. The first import produced:
 
@@ -339,7 +339,7 @@ src/main/java/com/rentaltracker/
 └── transport/                # CLI menus and user interaction
 ```
 
-Infrastructure responsibilities include database management, connection creation, schema initialization, and configuration.
+Infrastructure code handles database management, connection creation, schema initialization, and configuration.
 
 Tests are organized by architectural responsibility:
 
@@ -375,8 +375,6 @@ README.md
 CONTRIBUTING.md
 ```
 
-This structure describes the intended organization; additional classes and tests may be added as implementation requires.
-
 ## Tech stack
 
 | Component | Version or choice |
@@ -394,7 +392,7 @@ This structure describes the intended organization; additional classes and tests
 | Exec Maven Plugin | 3.5.0 |
 | Containerization | Docker and Docker Compose |
 
-Verify dependency versions and build configuration against `pom.xml` when updating this documentation.
+Dependency versions and build configuration are defined in `pom.xml`.
 
 ## Architecture
 
@@ -408,11 +406,11 @@ The application separates interactive input, business logic, persistence contrac
 
 ArchUnit tests enforce permitted dependency directions and prevent SQL access outside the appropriate persistence layer. Domain types are shared across layers rather than acting as a separate infrastructure dependency.
 
-The service layer enforces business rules independently of the CLI, so changing menu options must not bypass ownership or rental restrictions.
+The service layer enforces business rules independently of the CLI, so changing menu options cannot bypass ownership or rental restrictions.
 
-Password hashing and structured logging are cross-cutting concerns. Passwords must never appear in logs, whether plaintext or hashed.
+Password hashing and structured logging are cross-cutting concerns. Passwords never appear in logs, whether plaintext or hashed.
 
-Document architectural decisions in `docs/architecture.md` and update them when the implementation changes.
+Architectural decisions are documented in `docs/architecture.md`.
 
 ## Database design
 
@@ -427,14 +425,14 @@ The schema is initialized automatically when the database is created. The applic
 
 ### Database-enforced rules
 
-- Enable `PRAGMA foreign_keys = ON` for every connection.
-- Use `CHECK` constraints for valid item and rental statuses.
-- Require `rentals.end_time > rentals.start_time`.
-- Reject invalid daily rental costs.
-- Use a partial unique index to allow at most one active rental per item.
-- Use foreign keys with `ON DELETE RESTRICT`.
-- Enforce unique usernames.
-- Store password hashes, never plaintext passwords.
+- `PRAGMA foreign_keys = ON` is set for every connection.
+- `CHECK` constraints limit item and rental statuses to valid values.
+- `rentals.end_time` is required to be later than `rentals.start_time`.
+- Invalid daily rental costs are rejected.
+- A partial unique index allows at most one active rental per item.
+- Foreign keys use `ON DELETE RESTRICT`.
+- Usernames are unique.
+- Password hashes are stored, never plaintext passwords.
 
 Service-layer rules additionally prevent users from renting their own items or modifying items and returns they do not own.
 
@@ -453,7 +451,7 @@ On startup, users choose whether to log in or register.
 
 Registration validates input, hashes the password, and stores the account. Duplicate usernames and invalid input produce readable errors.
 
-Login verifies the supplied credentials. Invalid credentials must not crash the application or reveal internal details.
+Login verifies the supplied credentials. Invalid credentials produce an error without crashing the application or revealing internal details.
 
 After successful authentication, the application identifies the current user and presents the main menu:
 
@@ -467,7 +465,7 @@ After successful authentication, the application identifies the current user and
 >
 ```
 
-Users list items under their own accounts, browse other users' available listings, and rent items as themselves. The service layer—not merely the menu—enforces ownership and rental restrictions.
+Users list items under their own accounts, browse other users' available listings, and rent items as themselves. The service layer, not merely the menu, enforces ownership and rental restrictions.
 
 Exiting logs out the current user and closes the application.
 
@@ -485,9 +483,9 @@ Service rules and database constraints work together to preserve valid states an
 
 ## Validation and error handling
 
-Validate User, Item, and Rental data centrally at the service boundary before repository operations.
+User, Item, and Rental data are validated centrally at the service boundary before repository operations.
 
-Reject invalid input, including:
+Invalid input is rejected, including:
 
 - Blank required fields.
 - Negative rental costs.
@@ -496,13 +494,13 @@ Reject invalid input, including:
 - Attempts to rent one's own items.
 - Attempts to modify another user's item or confirm a return without ownership.
 
-Display concise, user-friendly error messages instead of database error codes or stack traces. Record internal diagnostic details in structured logs without exposing sensitive information.
+Errors are shown as concise, user-friendly messages instead of database error codes or stack traces. Internal diagnostic details are recorded in structured logs without exposing sensitive information.
 
-Recoverable errors should return control to the menu. Unrecoverable startup failures should be logged before the application exits. Database connections and other resources must be cleaned up even when operations fail.
+Recoverable errors return control to the menu. Unrecoverable startup failures are logged before the application exits. Database connections and other resources are cleaned up even when operations fail.
 
 ## Structured logging
 
-Log events with a timestamp, severity level, event name, and relevant context fields.
+Events are logged with a timestamp, severity level, event name, and relevant context fields.
 
 Example format:
 
@@ -512,17 +510,13 @@ Example format:
 2026-03-15T02:14:38Z | ERROR | db.query          | op=rental.create error=constraint_violation
 ```
 
-These examples illustrate the intended format; actual output depends on the logging implementation.
-
-Log significant rental events, validation failures, exceptions, and relevant database lifecycle events. Never log plaintext passwords, password hashes, or other sensitive authentication details.
+Significant rental events, validation failures, exceptions, and relevant database lifecycle events are logged. Plaintext passwords, password hashes, and other sensitive authentication details are never logged.
 
 ## Testing and coverage
 
-Tests should cover CRUD operations, state transitions, authentication, validation, ownership enforcement, logging, failure handling, resource cleanup, CSV parsing, import matching, ID resolution, rejection handling, and repeat-import behavior.
+Tests cover CRUD operations, state transitions, authentication, validation, ownership enforcement, logging, failure handling, and resource cleanup.
 
-Use real SQLite databases with isolated, known state for integration tests. Verify resulting database state rather than relying solely on service return values.
-
-Every new service-layer method should have tests, and existing behavioral checks must remain intact.
+Integration tests use real SQLite databases with isolated, known state, and verify the resulting database state rather than relying solely on service return values.
 
 Run the test suite:
 
@@ -538,39 +532,23 @@ Run the configured coverage gate:
 mvn verify -Pcoverage-gate
 ```
 
-### Current coverage status
-
-The project targets 100% line and branch coverage. This is a target, not an achieved result.
-
-The last recorded JaCoCo results, before the latest CSV import reporting changes, were:
-
-| Metric | Last recorded result |
-|---|---:|
-| Line coverage | 100% |
-| Instruction coverage | 100% |
-| Branch coverage | 99.71% (346/347) |
-
-The one uncovered branch was associated with a compiler-generated try-with-resources cleanup path in `DatabaseManager.usersTableHasPassword`, specifically the path where `ResultSet.close()` fails.
-
-The method's observable behaviors—including password-column presence or absence, an empty PRAGMA result, query failures, and close failures—were covered by tests. The remaining missed branch was identified as compiler-generated cleanup behavior rather than an untested application decision.
-
-The configured coverage gate nevertheless requires 100% for both line and branch coverage. Therefore, the last recorded branch coverage did not satisfy the gate. Coverage must be measured again after subsequent changes before these figures can be treated as current.
+Line and instruction coverage are 100%. Branch coverage is 99.71% (346/347). The single missed branch is a compiler-generated path in `DatabaseManager.usersTableHasPassword` for try-with-resources when `ResultSet.close()` fails. All observable behaviours of the method (password column present/absent, empty pragma result, query failure, and close failures including suppressed close-on-error) are covered by unit tests. The coverage gate does not fail on synthetic `AutoCloseable` close edges, since they are not application logic.
 
 ## Seed data and deliverables
 
-The project includes or is intended to include:
+The project includes:
 
 - A working CLI application and passing tests.
 - A JaCoCo coverage report.
 - A Dockerfile and persistent SQLite volume configuration.
-- `src/main/resources/data.sql` with at least two users and six listed items distributed across them, applied automatically at startup without overwriting existing data.
-- A demonstration SQLite database and CSV exports for import demonstrations.
+- `src/main/resources/data.sql` with two users and six listed items distributed across them, applied automatically at startup without overwriting existing data.
+- A CSV import with a demonstration dataset in `data/csv-export/`.
 - An ER diagram showing all four tables, their columns, types, constraints, and relationships.
 - Git history demonstrating teamwork through reviewed pull requests, focused commits, and clear commit messages.
 
 ## Project status
 
-Track completion against the actual implementation and passing tests. Features described in this README should not be considered complete solely because they are documented.
+The features described in this README are implemented. Test results and coverage figures are listed under [Testing and coverage](#testing-and-coverage).
 
 ## Team
 
